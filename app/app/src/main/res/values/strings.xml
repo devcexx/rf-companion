@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">RF Companion App</string>
+    <string name="rf_operation_success">Success!</string>
+    <string name="rf_operation_invalid_command">Device returned invalid command</string>
+    <string name="rf_operation_busy">Device is busy. Retry it later</string>
+    <string name="rf_operation_error">Error: %s</string>
+    <string name="rf_permission_denied">Required permissions not granted</string>
+    <string name="activity_main_profile">Profile</string>
+    <string name="app_connection_failed">Unable to connect to the device</string>
+    <string name="app_connection_success">Device connected!</string>
+    <string name="car_select_profile_title">Select profile</string>
+</resources>

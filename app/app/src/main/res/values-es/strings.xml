@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">RF Companion App</string>
+    <string name="rf_operation_success">Operación completada!</string>
+    <string name="rf_operation_invalid_command">Dispositivo: Comando desconocido</string>
+    <string name="rf_operation_busy">El dispositivo está ocupado. Inténtelo más tarde</string>
+    <string name="rf_operation_error">Error: %s</string>
+    <string name="rf_permission_denied">Permisos requeridos no concedidos</string>
+    <string name="activity_main_profile">Perfil</string>
+    <string name="app_connection_failed">Error al conectar con el dispositivo</string>
+    <string name="app_connection_success">Dispositivo conectado!</string>
+    <string name="car_select_profile_title">Cambiar perfil</string>
+</resources>
