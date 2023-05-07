@@ -101,6 +101,7 @@ static IRAM_ATTR void clemsa_codegen_base_clk_raise(struct clemsa_codegen_tx* tx
 }
 
 static IRAM_ATTR bool clemsa_codegen_base_clk_tick(gptimer_handle_t timer, const gptimer_alarm_event_data_t* edata, void* arg) {
+  portDISABLE_INTERRUPTS();
   struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
 
   if (tx->_base_clk_high) {
@@ -124,10 +125,12 @@ static IRAM_ATTR bool clemsa_codegen_base_clk_tick(gptimer_handle_t timer, const
   };
   gptimer_set_alarm_action(timer, &alarm_config);
   tx->_base_clk_high = !tx->_base_clk_high;
+  portENABLE_INTERRUPTS();
   return false;
 }
 
 static IRAM_ATTR bool clemsa_codegen_ask_clk_tick(gptimer_handle_t timer, const gptimer_alarm_event_data_t* edata, void* arg) {
+  portDISABLE_INTERRUPTS();
   struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
   if (tx->_remaining_ask_ticks <= 0) {
     gpio_set_level(tx->_generator->gpio, 0);
@@ -136,6 +139,7 @@ static IRAM_ATTR bool clemsa_codegen_ask_clk_tick(gptimer_handle_t timer, const 
     tx->_ask_clk_high = !tx->_ask_clk_high;
     gpio_set_level(tx->_generator->gpio, tx->_ask_clk_high);
   }
+  portENABLE_INTERRUPTS();
   return false;
 }
 

@@ -3,9 +3,8 @@
 #include "esp_gap_bt_api.h"
 #include "esp_spp_api.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/portmacro.h"
-#include "freertos/projdefs.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 
 #include "esp_log.h"
 #include "bluetooth/bt_spp_bluedroid.h"
@@ -39,6 +38,9 @@ static uint8_t bt_tx_queue_storage[MAX_BT_QUEUE_LEN * ITEM_SIZE];
 static StaticQueue_t confirmation_send_queue_holder;
 static uint8_t confirmation_send_queue_storage[1 * sizeof(uint32_t)];
 static QueueHandle_t confirmation_send_queue;
+
+static StaticSemaphore_t tx_init_semaphore_storage;
+static SemaphoreHandle_t tx_init_semaphore;
 
 static struct clemsa_codegen generator;
 static struct clemsa_codegen_tx tx;
@@ -75,6 +77,17 @@ void send_code_sent_confirmation_task(void* arg) {
   }
 }
 
+// Task that will initiate the transmission from the CPU 1, so
+// interrupts are also handled by CPU 1 and can run without weird
+// stuff interferring on them.
+void transmission_initiator_task(void* arg) {
+  while (1) {
+    xSemaphoreTake(tx_init_semaphore, portMAX_DELAY);
+    clemsa_codegen_begin_tx(&generator, &tx);
+    ESP_LOGI(TAG, "Transmission initated");
+  }
+}
+
 void app_main(void) {
   QueueHandle_t bt_rx_queue;
   QueueHandle_t bt_tx_queue;
@@ -83,19 +96,25 @@ void app_main(void) {
   ESP_ERROR_CHECK(clemsa_codegen_init(&generator, RF_GPIO));
 
   generator.done_callback = clemsa_codegen_tx_cb;
-
   tx.repetition_count = 10;
   tx.code_len = CLEMSA_CODEGEN_DEFAULT_CODE_SIZE;
 
   bt_rx_queue = xQueueCreateStatic(MAX_BT_QUEUE_LEN, ITEM_SIZE, bt_rx_queue_storage, &bt_rx_queue_holder);
   bt_tx_queue = xQueueCreateStatic(MAX_BT_QUEUE_LEN, ITEM_SIZE, bt_tx_queue_storage, &bt_tx_queue_holder);
   confirmation_send_queue = xQueueCreateStatic(1, sizeof(uint32_t), confirmation_send_queue_storage, &confirmation_send_queue_holder);
+  tx_init_semaphore = xSemaphoreCreateBinaryStatic(&tx_init_semaphore_storage);
 
   xTaskCreate
     (
      send_code_sent_confirmation_task,
      "Confirmation callback task",
-     4*1024, NULL, 10, NULL);
+     4*1024, NULL, tskIDLE_PRIORITY + 1, NULL);
+
+  xTaskCreatePinnedToCore
+    (
+     transmission_initiator_task,
+     "Transmission initiator task",
+     4*1024, NULL, tskIDLE_PRIORITY + 1, NULL, 1);
 
   struct bt_spp_bluedroid_config bt_config = {
     .recv_queue = bt_rx_queue,
@@ -122,7 +141,7 @@ void app_main(void) {
 	tx.code = HOME_GARAGE_ENTER_CODE;
 	tx.code_name = "Home Enter Garage";
 	last_tx_requester = bt_evt.handle;
-	clemsa_codegen_begin_tx(&generator, &tx);
+	xSemaphoreGive(tx_init_semaphore);
       }
     } else if (strcmp(CMD_HOME_GARAGE_EXIT, bt_evt.buffer) == 0) {
       ESP_LOGI(TAG, "Handling " CMD_HOME_GARAGE_EXIT " command");
@@ -132,7 +151,7 @@ void app_main(void) {
 	tx.code = HOME_GARAGE_EXIT_CODE;
 	tx.code_name = "Home Exit Garage";
 	last_tx_requester = bt_evt.handle;
-	clemsa_codegen_begin_tx(&generator, &tx);
+	xSemaphoreGive(tx_init_semaphore);
       }
     } else if (strcmp(CMD_PARENTS_GARAGE_LEFT, bt_evt.buffer) == 0) {
       ESP_LOGI(TAG, "Handling " CMD_PARENTS_GARAGE_LEFT " command");
@@ -142,7 +161,7 @@ void app_main(void) {
 	tx.code = PARENTS_GARAGE_ENTER_CODE;
 	tx.code_name = "Parents Garage Left";
 	last_tx_requester = bt_evt.handle;
-	clemsa_codegen_begin_tx(&generator, &tx);
+	xSemaphoreGive(tx_init_semaphore);
       }
     } else if (strcmp(CMD_PARENTS_GARAGE_RIGHT, bt_evt.buffer) == 0) {
       ESP_LOGI(TAG, "Handling " CMD_PARENTS_GARAGE_RIGHT " command");
@@ -152,7 +171,7 @@ void app_main(void) {
 	tx.code = PARENTS_GARAGE_ENTER_CODE;
 	tx.code_name = "Parents Garage RIGHT";
 	last_tx_requester = bt_evt.handle;
-	clemsa_codegen_begin_tx(&generator, &tx);
+	xSemaphoreGive(tx_init_semaphore);
       }
     } else {
       ESP_LOGW(TAG, "Received unknown command");

@@ -27,7 +27,7 @@
 #define CLEMSA_CODEGEN_BASE_CLK_RESOLUTION 1000000
 
 /* The frequency of the ASK generator */
-#define CLEMSA_CODEGEN_ASK_CLK_FREQUENCY 16000
+#define CLEMSA_CODEGEN_ASK_CLK_FREQUENCY 16670
 
 /* The time the base clock will generate a high signal, and low
    signal, respectively, expressed as the number of cycles of the base
@@ -36,8 +36,8 @@
    CLEMSA_CODEGEN_CLK_HIGH_COUNT + CLEMSA_CODEGEN_CLK_LOW_COUNT, and
    the duty, CLEMSA_CODEGEN_CLK_HIGH_COUNT /
    (CLEMSA_CODEGEN_CLK_HIGH_COUNT + CLEMSA_CODEGEN_CLK_LOW_COUNT) */
-#define CLEMSA_CODEGEN_CLK_HIGH_COUNT 2080
-#define CLEMSA_CODEGEN_CLK_LOW_COUNT 1040
+#define CLEMSA_CODEGEN_CLK_HIGH_COUNT 2070
+#define CLEMSA_CODEGEN_CLK_LOW_COUNT 1030
 
 /* The number of the ASK ticks that needs to be emitted for each digit
    of the transmitting code */

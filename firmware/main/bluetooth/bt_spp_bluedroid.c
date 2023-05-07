@@ -30,7 +30,7 @@
 
 #define SPP_TAG "bt_spp"
 #define SPP_SERVER_NAME "RF_COMPANION"
-#define DEVICE_NAME "garage-door-remote"
+#define DEVICE_NAME "garage-remote"
 
 static struct bt_spp_bluedroid_peer peer = {0};
 static struct bt_spp_bluedroid_config bt_spp_config = {0};
