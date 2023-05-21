@@ -128,9 +128,9 @@ void app_pairing_mode_main(void) {
      &queue_numcmp_confirm_holder);
   rfble_opts_t ble_opts = {
     .device_name = "RF Companion",
-    .discovery_mode = RF_BLE_DISC_GENERAL,
+    .discovery_mode = RFBLE_DISC_GENERAL,
     .allow_device_pairing = true,
-    .io_cap = RF_BLE_IO_CAP_KEYBOARD_DISPLAY,
+    .io_cap = RFBLE_IO_CAP_KEYBOARD_DISPLAY,
     .pair_req_numcmp_cb = passkey_numcmp_cb,
     .gatt_read_cb = rf_companion_bt_read_chr_cb,
     .gatt_write_cb = rf_companion_bt_write_chr_cb

@@ -5,5 +5,5 @@ idf_component_register(SRCS "clemsacode.c"
 			    "rfapp/pair_mode.c"
 			    "rfapp/rfapp.c"
 			    "bt/rfble.c"
-			    "bt/gatt_svr.c"
+			    "bt/rfble_gatt.c"
                     INCLUDE_DIRS "")

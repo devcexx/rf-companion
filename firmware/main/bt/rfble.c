@@ -27,8 +27,8 @@
 
 #define TAG "RF BLE"
 
-rfble_opts_t rf_ble_opts;
-rfble_state_t rf_ble_state = {0};
+rfble_opts_t rfble_opts;
+rfble_state_t rfble_state = {0};
 
 static uint8_t own_addr_type;
 static const char *tag = "NimBLE_BLE_PRPH";
@@ -41,15 +41,15 @@ static struct ble_gap_event_listener power_control_event_listener;
 #endif
 
 bool rfble_is_connected() {
-  return rf_ble_state.conn_handle != 0;
+  return rfble_state.conn_handle != 0;
 }
 
 void rfble_sync_whitelist_with_bonded_devs() {
-  ble_addr_t peers[RF_BLE_MAX_KNOWN_DEVICES];
+  ble_addr_t peers[RFBLE_MAX_KNOWN_DEVICES];
   int num_peers = 0;
   int rc;
 
-  rc = ble_store_util_bonded_peers(peers, &num_peers, RF_BLE_MAX_KNOWN_DEVICES);
+  rc = ble_store_util_bonded_peers(peers, &num_peers, RFBLE_MAX_KNOWN_DEVICES);
   assert(rc == 0);
 
   rc = ble_gap_wl_set(peers, num_peers);
@@ -115,7 +115,7 @@ static void rfble_advertise(void) {
   memset(&adv_params, 0, sizeof adv_params);
   adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
 
-  if (rf_ble_opts.discovery_mode == RF_BLE_DISC_GENERAL) {
+  if (rfble_opts.discovery_mode == RFBLE_DISC_GENERAL) {
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
     adv_params.filter_policy = BLE_HCI_ADV_FILT_NONE;
   } else {
@@ -155,7 +155,7 @@ static void rfble_gap_handle_connect(uint16_t conn_handle, int status) {
   if (status == 0) {
     assert(ble_gap_conn_find(conn_handle, &desc) == 0);
 
-    if (!rf_ble_opts.allow_device_pairing) {
+    if (!rfble_opts.allow_device_pairing) {
       // If the current configuration doesn't allow unknown devices to
       // connect, ensure that we do know this device. This shouldn't
       // be needed because of the whitelist, but dunno, just in case.
@@ -167,17 +167,17 @@ static void rfble_gap_handle_connect(uint16_t conn_handle, int status) {
 	ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
 	ESP_LOGE(TAG,
 		 "Received a connection successful from a unpaired device. This MUST NOT happen!. "
-		 RF_BLE_ADDR_PEER_FMT,
-		 RF_BLE_ADDR_PEER_FMT_PARAMS(desc.peer_id_addr, desc.peer_ota_addr));
+		 RFBLE_ADDR_PEER_FMT,
+		 RFBLE_ADDR_PEER_FMT_PARAMS(desc.peer_id_addr, desc.peer_ota_addr));
 	return;
       }
     }
 
-    rf_ble_state.conn_handle = conn_handle;
+    rfble_state.conn_handle = conn_handle;
     ble_gap_security_initiate(conn_handle);
   } else {
     /* Connection failed; resume advertising. */
-    rf_ble_state.conn_handle = 0;
+    rfble_state.conn_handle = 0;
     rfble_advertise();
   }
 }
@@ -186,7 +186,7 @@ static void rfble_gap_handle_passkey_action(uint16_t conn_handle, struct ble_gap
   struct ble_sm_io pkey = {0};
   int rc;
 
-  if (!rf_ble_opts.allow_device_pairing) {
+  if (!rfble_opts.allow_device_pairing) {
     ESP_LOGE(TAG, "Security manager forwarded a pairing request while device pairing should be disabled. This MUST NOT happen!!!");
     ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
     return;
@@ -195,7 +195,7 @@ static void rfble_gap_handle_passkey_action(uint16_t conn_handle, struct ble_gap
   ESP_LOGI(TAG, "Passkey action initiated -- Pairing in progress");
 
   if (params->action == BLE_SM_IOACT_DISP) {
-    if (rf_ble_opts.pair_req_display_key_cb == NULL) {
+    if (rfble_opts.pair_req_display_key_cb == NULL) {
       ESP_LOGE(TAG, "Requested BLE_SM_IOACT_DISP passkey action but callback was unset.");
       ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
       return;
@@ -203,29 +203,29 @@ static void rfble_gap_handle_passkey_action(uint16_t conn_handle, struct ble_gap
 
     pkey.action = params->action;
     pkey.passkey = esp_random() % 100000;
-    rf_ble_opts.pair_req_display_key_cb(conn_handle, pkey.passkey);
+    rfble_opts.pair_req_display_key_cb(conn_handle, pkey.passkey);
     rc = ble_sm_inject_io(conn_handle, &pkey);
     ESP_LOGI(tag, "ble_sm_inject_io result: %d\n", rc);
   } else if (params->action == BLE_SM_IOACT_NUMCMP) {
-    if (rf_ble_opts.pair_req_numcmp_cb == NULL) {
+    if (rfble_opts.pair_req_numcmp_cb == NULL) {
       ESP_LOGE(TAG, "Requested BLE_SM_IOACT_NUMCMP passkey action but callback was unset.");
       ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
       return;
     }
 
     pkey.action = params->action;
-    pkey.numcmp_accept = rf_ble_opts.pair_req_numcmp_cb(conn_handle, params->numcmp);
+    pkey.numcmp_accept = rfble_opts.pair_req_numcmp_cb(conn_handle, params->numcmp);
     rc = ble_sm_inject_io(conn_handle, &pkey);
     ESP_LOGI(tag, "ble_sm_inject_io result: %d\n", rc);
   } else if (params->action == BLE_SM_IOACT_INPUT) {
-    if (rf_ble_opts.pair_req_type_key_cb == NULL) {
+    if (rfble_opts.pair_req_type_key_cb == NULL) {
       ESP_LOGE(TAG, "Requested BLE_SM_IOACT_INPUT passkey action but callback was unset.");
       ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
       return;
     }
 
     pkey.action = params->action;
-    pkey.passkey = rf_ble_opts.pair_req_type_key_cb(conn_handle);
+    pkey.passkey = rfble_opts.pair_req_type_key_cb(conn_handle);
     rc = ble_sm_inject_io(conn_handle, &pkey);
     ESP_LOGI(tag, "ble_sm_inject_io result: %d\n", rc);
   } else {
@@ -235,29 +235,23 @@ static void rfble_gap_handle_passkey_action(uint16_t conn_handle, struct ble_gap
 }
 
 static void rfble_gap_handle_disconnect(struct ble_gap_conn_desc* desc, int reason) {
-  ESP_LOGI(TAG, "Peer disconnected; reason=%d; " RF_BLE_PEER_FULL_DESC_FMT, reason, RF_BLE_PEER_FULL_DESC_FMT_PARAMS(*desc));
+  ESP_LOGI(TAG, "Peer disconnected; reason=%d; " RFBLE_PEER_FULL_DESC_FMT, reason, RFBLE_PEER_FULL_DESC_FMT_PARAMS(*desc));
 
   /* Connection terminated; resume advertising. */
-  rf_ble_state.conn_handle = 0;
+  rfble_state.conn_handle = 0;
   rfble_advertise();
-}
-
-static void rfble_gap_handle_conn_updated(uint16_t conn_handle, int status) {
-  struct ble_gap_conn_desc desc;
-  assert(ble_gap_conn_find(conn_handle, &desc) == 0);
-  ESP_LOGI(TAG, "Connection updated; status=%d; " RF_BLE_PEER_FULL_DESC_FMT, status, RF_BLE_PEER_FULL_DESC_FMT_PARAMS(desc));
 }
 
 static void rfble_gap_handle_conn_update_req(uint16_t conn_handle) {
   struct ble_gap_conn_desc desc;
   assert(ble_gap_conn_find(conn_handle, &desc) == 0);
-  ESP_LOGI(TAG, "Connection updated request; " RF_BLE_PEER_FULL_DESC_FMT, RF_BLE_PEER_FULL_DESC_FMT_PARAMS(desc));
+  ESP_LOGI(TAG, "Connection updated request; " RFBLE_PEER_FULL_DESC_FMT, RFBLE_PEER_FULL_DESC_FMT_PARAMS(desc));
 }
 
 static void rfble_gap_handle_conn_update(uint16_t conn_handle) {
   struct ble_gap_conn_desc desc;
   assert(ble_gap_conn_find(conn_handle, &desc) == 0);
-  ESP_LOGI(TAG, "Connection updated; " RF_BLE_PEER_FULL_DESC_FMT, RF_BLE_PEER_FULL_DESC_FMT_PARAMS(desc));
+  ESP_LOGI(TAG, "Connection updated; " RFBLE_PEER_FULL_DESC_FMT, RFBLE_PEER_FULL_DESC_FMT_PARAMS(desc));
 }
 
 static void rfble_gap_handle_adv_complete(int reason) {
@@ -267,7 +261,7 @@ static void rfble_gap_handle_adv_complete(int reason) {
 static void rfble_gap_handle_enc_change(uint16_t conn_handle, int status) {
   struct ble_gap_conn_desc desc;
   assert(ble_gap_conn_find(conn_handle, &desc) == 0);
-  ESP_LOGI(TAG, "Encryption change; status=%d; " RF_BLE_PEER_FULL_DESC_FMT, status, RF_BLE_PEER_FULL_DESC_FMT_PARAMS(desc));
+  ESP_LOGI(TAG, "Encryption change; status=%d; " RFBLE_PEER_FULL_DESC_FMT, status, RFBLE_PEER_FULL_DESC_FMT_PARAMS(desc));
   if (status != 0) {
     ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
     ESP_LOGW(TAG, "Encryption status is != 0. Connection terminated");
@@ -277,41 +271,38 @@ static void rfble_gap_handle_enc_change(uint16_t conn_handle, int status) {
 static void rfble_gap_handle_identity_resolved(uint16_t conn_handle) {
   struct ble_gap_conn_desc desc;
   assert(ble_gap_conn_find(conn_handle, &desc) == 0);
-  ESP_LOGI(TAG, "Identity resolved; " RF_BLE_ADDR_PEER_FMT, RF_BLE_ADDR_PEER_FMT_PARAMS(desc.peer_id_addr, desc.peer_ota_addr));
+  ESP_LOGI(TAG, "Identity resolved; " RFBLE_ADDR_PEER_FMT, RFBLE_ADDR_PEER_FMT_PARAMS(desc.peer_id_addr, desc.peer_ota_addr));
 }
 
 
 static void rfble_gap_handle_subscribe(uint16_t conn_handle) {
   struct ble_gap_conn_desc desc;
   assert(ble_gap_conn_find(conn_handle, &desc) == 0);
-  ESP_LOGI(TAG, "Subscription updated; " RF_BLE_PEER_FULL_DESC_FMT, RF_BLE_PEER_FULL_DESC_FMT_PARAMS(desc));
+  ESP_LOGI(TAG, "Subscription updated; " RFBLE_PEER_FULL_DESC_FMT, RFBLE_PEER_FULL_DESC_FMT_PARAMS(desc));
 }
 
 static void rfble_gap_handle_mtu_update(uint16_t conn_handle, uint16_t channel, uint16_t value) {
   struct ble_gap_conn_desc desc;
   assert(ble_gap_conn_find(conn_handle, &desc) == 0);
-  ESP_LOGI(TAG, "MTU updated; channel=%d; value=%d; " RF_BLE_PEER_FULL_DESC_FMT, channel, value, RF_BLE_PEER_FULL_DESC_FMT_PARAMS(desc));
+  ESP_LOGI(TAG, "MTU updated; channel=%d; value=%d; " RFBLE_PEER_FULL_DESC_FMT, channel, value, RFBLE_PEER_FULL_DESC_FMT_PARAMS(desc));
 }
 
 static int rfble_gap_handle_repeat_pairing(uint16_t conn_handle) {
   struct ble_gap_conn_desc desc;
   assert(ble_gap_conn_find(conn_handle, &desc) == 0);
 
-  if (rf_ble_opts.allow_device_pairing) {
-    ESP_LOGW(TAG, "Peer " RF_BLE_ADDR_FMT " is attempting to re-pair. Allow device re-pairing is enabled and keys will be updated", RF_BLE_ADDR_FMT_PARAMS(desc.peer_id_addr));
+  if (rfble_opts.allow_device_pairing) {
+    ESP_LOGW(TAG, "Peer " RFBLE_ADDR_FMT " is attempting to re-pair. Allow device re-pairing is enabled and keys will be updated", RFBLE_ADDR_FMT_PARAMS(desc.peer_id_addr));
     ble_store_util_delete_peer(&desc.peer_id_addr);
     return BLE_GAP_REPEAT_PAIRING_RETRY;
   } else {
-    ESP_LOGW(TAG, "Peer " RF_BLE_ADDR_FMT " is attempting to repeat pairing but pairing is disabled. Ignoring request.", RF_BLE_ADDR_FMT_PARAMS(desc.peer_id_addr));
+    ESP_LOGW(TAG, "Peer " RFBLE_ADDR_FMT " is attempting to repeat pairing but pairing is disabled. Ignoring request.", RFBLE_ADDR_FMT_PARAMS(desc.peer_id_addr));
     ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
     return BLE_GAP_REPEAT_PAIRING_IGNORE;
   }
 }
 
 static int rfble_gap_event(struct ble_gap_event *event, void *arg) {
-  struct ble_gap_conn_desc desc;
-  int rc;
-
   switch (event->type) {
   case BLE_GAP_EVENT_CONNECT:
     rfble_gap_handle_connect(event->connect.conn_handle, event->connect.status);
@@ -424,7 +415,7 @@ static void rfble_host_task(void *param) {
 void rfble_begin(rfble_opts_t* opts) {
   int rc;
 
-  memcpy(&rf_ble_opts, opts, sizeof(rfble_opts_t));
+  memcpy(&rfble_opts, opts, sizeof(rfble_opts_t));
 
   /* NVS is required at this point, but must be initialized by caller. */
   nimble_port_init();
@@ -432,7 +423,7 @@ void rfble_begin(rfble_opts_t* opts) {
   /* Initialize the NimBLE host configuration. */
   ble_hs_cfg.reset_cb = rfble_on_reset;
   ble_hs_cfg.sync_cb = rfble_on_sync;
-  ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
+  ble_hs_cfg.gatts_register_cb = rfble_gatt_register_cb;
   ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
   ble_hs_cfg.sm_io_cap = opts->io_cap;
   ble_hs_cfg.sm_bonding = 1;
@@ -446,7 +437,7 @@ void rfble_begin(rfble_opts_t* opts) {
 
 
 
-  rc = gatt_svr_init();
+  rc = rfble_gatt_init();
   assert(rc == 0);
 
   /* Set the default device name. */

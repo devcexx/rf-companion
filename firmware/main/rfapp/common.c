@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include "../clemsacode.h"
 #include "../private.h"
+#include "../bt/rfble_gatt.h"
 
 #if CONFIG_RFAPP_TARGET_ESP32S3_LOLIN_MINI
 #define STATUS_LED_GPIO 47
@@ -49,6 +50,10 @@ void init_status_led(void) {
   led_strip_clear(status_led);
 }
 
+void status_led_off() {
+  status_led_color(0, 0, 0);
+}
+
 void status_led_color(uint8_t r, uint8_t g, uint8_t b) {
 #if CONFIG_RFAPP_TARGET_ESP32S3_LOLIN_MINI
     led_strip_set_pixel(status_led, 0, g, r, b);
@@ -56,6 +61,10 @@ void status_led_color(uint8_t r, uint8_t g, uint8_t b) {
     led_strip_set_pixel(status_led, 0, r, g, b);
 #endif
   led_strip_refresh(status_led);
+}
+
+void status_led_color_rgb(struct rgb *rgb) {
+  status_led_color(rgb->r, rgb->g, rgb->b);
 }
 
 void init_nvs(void) {
@@ -67,22 +76,19 @@ void init_nvs(void) {
     ESP_ERROR_CHECK(ret);
 }
 
+bool rf_antenna_is_busy() { return antenna_busy; }
 
-bool rf_antenna_is_busy() {
-  return antenna_busy;
-}
 void rf_antenna_set_busy(bool value) {
-  if (antenna_busy != value && rfble_is_connected()) {
-    int rc = rfble_gatt_notif8(rf_ble_state.conn_handle, value);
-    if (rc != 0) {
-      RF_LOGE("Failed to notify antenna state change: %d", rc);
-    }
-  }
+  bool changed = antenna_busy != value;
   antenna_busy = value;
+  if (changed) {
+    rfble_gatt_notify_antenna_state_change();
+  }
 }
 
 static void clemsa_codegen_tx_cb(struct clemsa_codegen_tx* tx) {
   rf_antenna_set_busy(false);
+  rfble_gatt_notify_send_rf_response(RFBLE_GATT_SEND_RF_COMPLETED);
 }
 
 // Task that will initiate the transmission from the CPU 1, so
@@ -118,9 +124,12 @@ void init_clemsa_codegen() {
      4*1024, NULL, tskIDLE_PRIORITY + 1, NULL, 1);
 }
 
+// This function is only intended to be called from the Send RF GATT
+// Operation, because it will notify back the GATT server about
+// changes in the operation.
 void rf_begin_send_stored_signal(rf_stored_signal_t signal) {
   if (rf_antenna_is_busy()) {
-    // TODO Do... something??
+    rfble_gatt_notify_send_rf_response(RFBLE_GATT_SEND_RF_BUSY);
     return;
   }
 
@@ -135,14 +144,12 @@ void rf_begin_send_stored_signal(rf_stored_signal_t signal) {
 	tx.code_name = "Home Exit Garage";
 	break;
   default:
-    // TODO Unknown signal?
-    RF_LOGE("Unknown stored signal requested to be sent??");
+    RF_LOGE("Unknown stored signal requested to be sent: %d", signal);
+    rfble_gatt_notify_send_rf_response(RFBLE_GATT_SEND_RF_UNKNOWN_SIGNAL);
     return;
   }
-
-  // TODO Should this be atomic?
+  rfble_gatt_notify_send_rf_response(RFBLE_GATT_SEND_RF_PROCESSING);
   rf_antenna_set_busy(true);
-
   bool value = true;
   xQueueSend(queue_tx_start_handle, &value, 0);
 }
@@ -169,6 +176,7 @@ int rf_companion_bt_write_chr_cb(struct ble_gatt_access_ctxt *ctxt, const ble_uu
 
     RF_LOGI("Requested sending stored RF signal with id %d", value);
     rf_begin_send_stored_signal(value);
+    return 0;
   }
 
   return BLE_ATT_ERR_UNLIKELY;

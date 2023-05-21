@@ -60,12 +60,8 @@ extern struct rgb COLOR_CYAN;
 
 void init_status_led(void);
 void status_led_color(uint8_t r, uint8_t g, uint8_t b);
-static void status_led_off() {
-  status_led_color(0, 0, 0);
-}
-static void status_led_color_rgb(struct rgb* rgb) {
-  status_led_color(rgb->r, rgb->g, rgb->b);
-}
+void status_led_off();
+void status_led_color_rgb(struct rgb* rgb);
 
 void app_pairing_mode_main(void);
 void app_rf_main(void);
