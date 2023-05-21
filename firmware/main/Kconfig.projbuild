@@ -1,0 +1,12 @@
+menu "RF Companion Configuration"
+    choice "RFAPP_TARGET_DEVICE"
+        prompt "Target Device"
+	help
+	    Target device
+
+        config RFAPP_TARGET_ESP32S3_DEVKIT
+	    bool "ESP32-S3 DevKitC"
+	config RFAPP_TARGET_ESP32S3_LOLIN_MINI
+	    bool "ESP32-S3 Wemos LOLIN S3 Mini"
+    endchoice
+endmenu

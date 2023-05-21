@@ -29,7 +29,11 @@ static void clemsa_codegen_cleanup_transmission(void* arg, uint32_t _ignored) {
   tx->_generator->busy = false;
 
   gptimer_stop(tx->_generator->_base_clk);
-  gptimer_stop(tx->_generator->_ask_clk);
+
+  if (tx->_ask_running) {
+    gptimer_stop(tx->_generator->_ask_clk);
+  }
+
 
   gptimer_disable(tx->_generator->_base_clk);
   gptimer_disable(tx->_generator->_ask_clk);
@@ -42,7 +46,10 @@ static void clemsa_codegen_cleanup_transmission(void* arg, uint32_t _ignored) {
 }
 
 static IRAM_ATTR void clemsa_codegen_base_clk_fall(struct clemsa_codegen_tx* tx) {
-  gptimer_stop(tx->_generator->_ask_clk);
+  if (tx->_ask_running) {
+    tx->_ask_running = false;
+    gptimer_stop(tx->_generator->_ask_clk);
+  }
   gpio_set_level(tx->_generator->gpio, 0);
   tx->_base_clk_cycles++;
 }
@@ -91,6 +98,8 @@ static IRAM_ATTR void clemsa_codegen_base_clk_raise(struct clemsa_codegen_tx* tx
 
       tx->_ask_clk_high = false;
       gptimer_set_raw_count(tx->_generator->_ask_clk, 0);
+
+      tx->_ask_running = true;
       gptimer_start(tx->_generator->_ask_clk);
     }
   } else {
@@ -185,6 +194,7 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
   tx->_next_code_repetition_start_cycle = get_code_repetition_begin_cycle(0, tx->code_len);
   tx->_times_code_sent = 0;
   tx->_terminated = false;
+  tx->_ask_running = false;
 
   gptimer_alarm_config_t base_clk_alarm_config = {
     .alarm_count = CLEMSA_CODEGEN_CLK_HIGH_COUNT,
@@ -235,6 +245,7 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
   if ((err = gptimer_start(generator->_base_clk)) != ESP_OK) {
     return err;
   }
+
 
   return ESP_OK;
 }

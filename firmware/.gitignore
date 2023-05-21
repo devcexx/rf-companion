@@ -4,3 +4,5 @@
 *.old
 /.cache/
 /samples/
+sdkconfig
+/managed_components

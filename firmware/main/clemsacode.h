@@ -98,6 +98,10 @@ struct clemsa_codegen_tx {
      oscillate the transmission until it autostops */
   volatile int _remaining_ask_ticks;
 
+  /* Stores if the ASK clock is running, just for preventing annoying
+     invalid state errors from ESP */
+  volatile bool _ask_running;
+
   /* (Internal) Indicates when will the next code repetition start to be transmitted. */
   uint32_t _next_code_repetition_start_cycle;
 
