@@ -6,4 +6,5 @@ idf_component_register(SRCS "clemsacode.c"
 			    "rfapp/rfapp.c"
 			    "bt/rfble.c"
 			    "bt/rfble_gatt.c"
+			    "teslacharger.c"
                     INCLUDE_DIRS "")

@@ -9,4 +9,13 @@ menu "RF Companion Configuration"
 	config RFAPP_TARGET_ESP32S3_LOLIN_MINI
 	    bool "ESP32-S3 Wemos LOLIN S3 Mini"
     endchoice
+    config RFAPP_DEVO_MODE
+        bool
+	default n
+        prompt "Enable development mode"
+	help
+	    This switch can be used for enabling specific logic that
+	    should be enabled during development process, e.g specific
+	    development BLE name for preventing clashes with the real
+	    one, automatic pairing request approval, etc.
 endmenu

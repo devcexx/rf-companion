@@ -33,7 +33,7 @@ void app_rf_main(void) {
      0);
 
   rfble_opts_t ble_opts = {
-    .device_name = "RF Companion",
+    .device_name = RF_COMPANION_DEVICE_NAME,
     .discovery_mode = RFBLE_DISC_FILTERED,
     .allow_device_pairing = false,
     .io_cap = RFBLE_IO_CAP_KEYBOARD_DISPLAY,

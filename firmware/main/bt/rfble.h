@@ -11,7 +11,7 @@
 #error It is required the maximum number of bonded devices to be the same as the max whitelist size (CONFIG_BT_NIMBLE_MAX_BONDS == CONFIG_BT_NIMBLE_WHITELIST_SIZE)
 #endif
 
-#define RFBLE_ADDR_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
+#define RFBLE_ADDR_FMT "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx"
 #define RFBLE_ADDR_FMT_PARAMS(addr)                                           \
   (addr).val[5], (addr).val[4], (addr).val[3], (addr).val[2], (addr).val[1],   \
       (addr).val[0]

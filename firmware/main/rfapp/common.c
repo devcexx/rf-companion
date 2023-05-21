@@ -1,3 +1,4 @@
+#include "esp_err.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/portmacro.h"
@@ -5,6 +6,7 @@
 #include "host/ble_uuid.h"
 #include "led_strip.h"
 #include "led_strip_types.h"
+#include "nvs.h"
 #include "rfapp.h"
 #include "driver/gpio.h"
 #include "nvs_flash.h"
@@ -12,12 +14,7 @@
 #include "../clemsacode.h"
 #include "../private.h"
 #include "../bt/rfble_gatt.h"
-
-#if CONFIG_RFAPP_TARGET_ESP32S3_LOLIN_MINI
-#define STATUS_LED_GPIO 47
-#else
-#define STATUS_LED_GPIO 48
-#endif
+#include "../teslacharger.h"
 
 struct rgb COLOR_RED = {.r = 255, .g = 0, .b = 0};
 struct rgb COLOR_BLUE = {.r = 0, .g = 0, .b = 255};
@@ -33,8 +30,15 @@ static struct clemsa_codegen_tx tx = {0};
 bool pairing_mode;
 bool ready_to_reboot = false;
 
-DECL_STATIC_QUEUE(tx_start, sizeof(bool), 1);
+nvs_handle_t app_nvs_handle;
+
+DECL_STATIC_QUEUE(tx_start, sizeof(tx_type_t), 1);
 QueueHandle_t queue_tx_start_handle;
+
+void init_antenna(void) {
+  gpio_reset_pin(RF_ANTENNA_GPIO);
+  gpio_set_direction(RF_ANTENNA_GPIO, GPIO_MODE_OUTPUT);
+}
 
 void init_status_led(void) {
   led_strip_config_t strip_config = {
@@ -50,7 +54,7 @@ void init_status_led(void) {
   led_strip_clear(status_led);
 }
 
-void status_led_off() {
+void status_led_off(void) {
   status_led_color(0, 0, 0);
 }
 
@@ -74,6 +78,47 @@ void init_nvs(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK(nvs_open(RF_APP_NVS_NS, NVS_READWRITE, &app_nvs_handle));
+}
+
+uint8_t rf_app_get_next_boot_mode() {
+  uint8_t mode;
+  esp_err_t ret;
+
+  ret = nvs_get_u8(app_nvs_handle, RF_APP_INIT_MODE_KEY, &mode);
+  if (ret == ESP_ERR_NVS_NOT_FOUND) {
+    return RF_APP_INIT_HW_DEFINED;
+  }
+
+  if (ret == ESP_OK) {
+    return mode;
+  }
+
+  RF_LOGE("Unable to read next boot mode: %s", esp_err_to_name(ret));
+  return RF_APP_INIT_HW_DEFINED;
+}
+
+void rf_app_set_next_boot_mode(uint8_t mode) {
+  esp_err_t ret = nvs_set_u8(app_nvs_handle, RF_APP_INIT_MODE_KEY, mode);
+  if (ret == ESP_OK) {
+    ret = nvs_commit(app_nvs_handle);
+  }
+
+  if (ret != ESP_OK) {
+    RF_LOGE("Unable to set boot mode: %s", esp_err_to_name(ret));
+  }
+}
+
+
+void rf_app_clear_next_boot_mode() {
+  esp_err_t ret = nvs_erase_key(app_nvs_handle, RF_APP_INIT_MODE_KEY);
+  if (ret == ESP_OK) {
+    ret = nvs_commit(app_nvs_handle);
+  }
+
+  if (ret != ESP_OK && ret != ESP_ERR_NVS_NOT_FOUND) {
+    RF_LOGE("Unable to clear boot mode: %s", esp_err_to_name(ret));
+  }
 }
 
 bool rf_antenna_is_busy() { return antenna_busy; }
@@ -95,11 +140,28 @@ static void clemsa_codegen_tx_cb(struct clemsa_codegen_tx* tx) {
 // interrupts are also handled by CPU 1 and can run without weird
 // stuff interferring on them.
 static void transmission_initiator_task(void* arg) {
-  bool recv;
+  tx_type_t tx_type;
 
   while (1) {
-    xQueueReceive(queue_tx_start_handle, &recv, portMAX_DELAY);
-    ESP_ERROR_CHECK(clemsa_codegen_begin_tx(&generator, &tx));
+    xQueueReceive(queue_tx_start_handle, &tx_type, portMAX_DELAY);
+    switch (tx_type) {
+    case TX_TYPE_CLEMSA_CODEGEN:
+      // In this kind of transmission, everything's already set up by
+      // the caller, we just need to initiate the tx. The callback of
+      // the tx will then free the antenna and send the termination
+      // notification.
+      ESP_ERROR_CHECK(clemsa_codegen_begin_tx(&generator, &tx));
+      break;
+    case TX_TYPE_TESLA_CHARGER_OPEN:
+      // In this tx, the antenna is set to busy prior to this call,
+      // and the state of the request is set to PROCESSING. We need to
+      // run the tx, free the antenna and send the RF task completion
+      // notification.
+      tesla_charger_open_door_sync(RF_ANTENNA_GPIO);
+      rfble_gatt_notify_send_rf_response(RFBLE_GATT_SEND_RF_COMPLETED);
+      rf_antenna_set_busy(false);
+    }
+
     RF_LOGI("Transmission initiated");
   }
 }
@@ -111,7 +173,7 @@ void init_clemsa_codegen() {
      queue_tx_start_storage,
      &queue_tx_start_holder);
 
-  ESP_ERROR_CHECK(clemsa_codegen_init(&generator, RF_GPIO));
+  ESP_ERROR_CHECK(clemsa_codegen_init(&generator, RF_ANTENNA_GPIO));
 
   generator.done_callback = clemsa_codegen_tx_cb;
   tx.repetition_count = 10;
@@ -124,6 +186,32 @@ void init_clemsa_codegen() {
      4*1024, NULL, tskIDLE_PRIORITY + 1, NULL, 1);
 }
 
+/**
+ * Acquires the RF antenna and sends to the Transmission initiator
+ * task a signal for initiating the transmission of a signal.
+ */
+static void rf_push_tx(tx_type_t type) {
+  if (rf_antenna_is_busy()) {
+    RF_LOGE("Couldn't initiate the transmission because the antenna is busy.");
+    return;
+  }
+
+  rfble_gatt_notify_send_rf_response(RFBLE_GATT_SEND_RF_PROCESSING);
+  rf_antenna_set_busy(true);
+  xQueueSend(queue_tx_start_handle, &type, 0);
+}
+
+static void rf_push_clemsa_tx(const bool* code, const char* code_name) {
+  if (rf_antenna_is_busy()) {
+    RF_LOGE("Couldn't initiate the transmission because the antenna is busy.");
+    return;
+  }
+
+  tx.code = code;
+  tx.code_name = code_name;
+  rf_push_tx(TX_TYPE_CLEMSA_CODEGEN);
+}
+
 // This function is only intended to be called from the Send RF GATT
 // Operation, because it will notify back the GATT server about
 // changes in the operation.
@@ -133,25 +221,28 @@ void rf_begin_send_stored_signal(rf_stored_signal_t signal) {
     return;
   }
 
-
   switch (signal) {
   case STORED_SIGNAL_HOME_GARAGE_ENTER:
-    	tx.code = HOME_GARAGE_ENTER_CODE;
-	tx.code_name = "Home Enter Garage";
-	break;
+    rf_push_clemsa_tx(HOME_GARAGE_ENTER_CODE, "Home Enter Garage");
+    break;
   case STORED_SIGNAL_HOME_GARAGE_EXIT:
-    	tx.code = HOME_GARAGE_EXIT_CODE;
-	tx.code_name = "Home Exit Garage";
-	break;
+    rf_push_clemsa_tx(HOME_GARAGE_EXIT_CODE, "Home Exit Garage");
+    break;
+  case STORED_SIGNAL_PARENTS_GARAGE_LEFT:
+    rf_push_clemsa_tx(PARENTS_GARAGE_ENTER_CODE, "Parents Enter Garage");
+    break;
+  case STORED_SIGNAL_PARENTS_GARAGE_RIGHT:
+    rf_push_clemsa_tx(PARENTS_GARAGE_EXIT_CODE, "Parents Exit Garage");
+    break;
+  case STORED_SIGNAL_TESLA_CHARGER_DOOR_OPEN:
+    rf_push_tx(TX_TYPE_TESLA_CHARGER_OPEN);
+    break;
   default:
     RF_LOGE("Unknown stored signal requested to be sent: %d", signal);
     rfble_gatt_notify_send_rf_response(RFBLE_GATT_SEND_RF_UNKNOWN_SIGNAL);
     return;
   }
-  rfble_gatt_notify_send_rf_response(RFBLE_GATT_SEND_RF_PROCESSING);
-  rf_antenna_set_busy(true);
-  bool value = true;
-  xQueueSend(queue_tx_start_handle, &value, 0);
+
 }
 
 int rf_companion_bt_read_chr_cb(struct ble_gatt_access_ctxt *ctxt, const ble_uuid_t* chr_id) {
@@ -195,6 +286,15 @@ bool pairing_mode_button_state() {
 void rf_companion_main_task() {
   int64_t pairing_button_pressed_since = esp_timer_get_time();
   bool ready_to_reboot_led_on = false;
+
+  #ifdef CONFIG_RFAPP_DEVO_MODE
+  RF_LOGW("/====================================================================\\");
+  RF_LOGW("|                              WARNING!                              |");
+  RF_LOGW("|  Application is running in development mode. In this mode, pairing |");
+  RF_LOGW("|  request will be AUTO ACCEPTED! Make sure this is not running on a |");
+  RF_LOGW("|                       production environment!                      |");
+  RF_LOGW("\\====================================================================/");
+  #endif
 
   while (true) {
     if (ready_to_reboot) {

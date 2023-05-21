@@ -8,11 +8,48 @@
 #include "esp_log.h"
 #include "../bt/rfble.h"
 
-#define RF_GPIO GPIO_NUM_43
-#define PAIRING_BUTTON_GPIO GPIO_NUM_15
 #define PAIRING_BUTTON_MICROS (3 * 1000000)
 
+// Make this match your workbench!
+#ifdef CONFIG_RFAPP_DEVO_MODE
+#define RF_ANTENNA_GPIO GPIO_NUM_43
+#define PAIRING_BUTTON_GPIO GPIO_NUM_15
+#else
+#define RF_ANTENNA_GPIO GPIO_NUM_43
+#define PAIRING_BUTTON_GPIO GPIO_NUM_11
+#endif
+
+
+#if CONFIG_RFAPP_TARGET_ESP32S3_LOLIN_MINI
+#define STATUS_LED_GPIO 47
+#else
+#define STATUS_LED_GPIO 48
+#endif
+
+#ifdef CONFIG_RFAPP_DEVO_MODE
+#define RF_COMPANION_DEVICE_NAME "RF Comp Devo"
+#else
+#define RF_COMPANION_DEVICE_NAME "RF Companion"
+#endif
+
+
+/** The NVS namespace used by the application */
+#define RF_APP_NVS_NS "rfapp"
+
+/** The key in NVS use to determine the next init mode for the app (see RF_APP_INIT_*)*/
+#define RF_APP_INIT_MODE_KEY "rfapp-init-mode"
+
+/** Indicates no specific boot mode: it will defined by the current status of the pairing button */
+#define RF_APP_INIT_HW_DEFINED 0
+
+/** Indicates that the device will be forced to go into default mode */
+#define RF_APP_INIT_DEFAULT_MODE 1
+
+/** Indicates that the device will be forced to go into pairing mode */
+#define RF_APP_INIT_PAIRING_MODE 2
+
 #define RF_APP_TAG "RF Companion"
+
 #define RF_LOGE(format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   RF_APP_TAG, format, ##__VA_ARGS__)
 #define RF_LOGW(format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_WARN,    RF_APP_TAG, format, ##__VA_ARGS__)
 #define RF_LOGI(format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_INFO,    RF_APP_TAG, format, ##__VA_ARGS__)
@@ -44,8 +81,16 @@ extern bool ready_to_reboot;
 
 typedef enum {
   STORED_SIGNAL_HOME_GARAGE_EXIT = 1,
-  STORED_SIGNAL_HOME_GARAGE_ENTER = 2
+  STORED_SIGNAL_HOME_GARAGE_ENTER = 2,
+  STORED_SIGNAL_PARENTS_GARAGE_LEFT = 3,
+  STORED_SIGNAL_PARENTS_GARAGE_RIGHT = 4,
+  STORED_SIGNAL_TESLA_CHARGER_DOOR_OPEN = 5,
 } rf_stored_signal_t;
+
+typedef enum __attribute__((packed)) {
+  TX_TYPE_CLEMSA_CODEGEN = 1,
+  TX_TYPE_TESLA_CHARGER_OPEN = 2
+} tx_type_t;
 
 struct rgb {
   uint8_t r;
@@ -58,10 +103,16 @@ extern struct rgb COLOR_BLUE;
 extern struct rgb COLOR_GREEN;
 extern struct rgb COLOR_CYAN;
 
+void init_antenna(void);
+
 void init_status_led(void);
 void status_led_color(uint8_t r, uint8_t g, uint8_t b);
-void status_led_off();
-void status_led_color_rgb(struct rgb* rgb);
+void status_led_off(void);
+void status_led_color_rgb(struct rgb *rgb);
+
+uint8_t rf_app_get_next_boot_mode();
+void rf_app_set_next_boot_mode(uint8_t mode);
+void rf_app_clear_next_boot_mode();
 
 void app_pairing_mode_main(void);
 void app_rf_main(void);
