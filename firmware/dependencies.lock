@@ -1,15 +1,21 @@
 dependencies:
+  cc1101-idf:
+    component_hash: null
+    source:
+      path: /home/devcexx/projects/cc1101/cc1101-idf/components/cc1101-idf
+      type: local
+    version: 1.0.5
   espressif/led_strip:
-    component_hash: b72bbf7e4522e8e445db30b10627bc0e8e70d668af316dece9b15abf729aef37
+    component_hash: 16ff4d03414dbb63aa38a3cfd4c1dd9babcf9afef5578f1598295240a2c8afad
     source:
       service_url: https://api.components.espressif.com/
       type: service
-    version: 2.3.1
+    version: 2.3.2
   idf:
     component_hash: null
     source:
       type: idf
     version: 5.0.2
-manifest_hash: 866a017870fcec1240064adf450d5b56fe14dc761ed21f016308418230712755
+manifest_hash: 136065662c9ebf438ca97bd250e6a2745f5810835ab21a8f4455eb63ee0d14d6
 target: esp32s3
 version: 1.0.0

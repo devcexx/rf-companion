@@ -18,4 +18,12 @@ menu "RF Companion Configuration"
 	    should be enabled during development process, e.g specific
 	    development BLE name for preventing clashes with the real
 	    one, automatic pairing request approval, etc.
+
+    config RFAPP_ENABLE_CC1101_SUPPORT
+        bool
+	default n
+	prompt "Enable CC1101 support"
+        help
+	    Enables the support of using the CC1101 as an antenna,
+	    instead of a simple STX882-like antenna.
 endmenu

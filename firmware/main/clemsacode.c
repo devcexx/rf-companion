@@ -152,9 +152,16 @@ static IRAM_ATTR bool clemsa_codegen_ask_clk_tick(gptimer_handle_t timer, const 
   return false;
 }
 
-esp_err_t clemsa_codegen_init(struct clemsa_codegen* ptr, gpio_num_t gpio) {
+#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, cc1101_device_t* device) {
+#else
+esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, gpio_num_t gpio) {
+#endif
   int err;
 
+  #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  ptr->cc1101_device = device;
+  #else
   ptr->gpio = gpio;
   gpio_reset_pin(gpio);
   gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
@@ -180,6 +187,8 @@ esp_err_t clemsa_codegen_init(struct clemsa_codegen* ptr, gpio_num_t gpio) {
     return err;
   }
 
+  #endif
+
   return ESP_OK;
 }
 
@@ -194,8 +203,10 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
   tx->_next_code_repetition_start_cycle = get_code_repetition_begin_cycle(0, tx->code_len);
   tx->_times_code_sent = 0;
   tx->_terminated = false;
-  tx->_ask_running = false;
 
+#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#else
+  tx->_ask_running = false;
   gptimer_alarm_config_t base_clk_alarm_config = {
     .alarm_count = CLEMSA_CODEGEN_CLK_HIGH_COUNT,
     .flags.auto_reload_on_alarm = false,
@@ -248,6 +259,7 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
 
 
   return ESP_OK;
+#endif // CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
 }
 
 bool clemsa_codegen_tx_finished(struct clemsa_codegen_tx *tx) {

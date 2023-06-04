@@ -4,6 +4,8 @@ dependencies:
   ## Required IDF version
   idf:
     version: ">=4.1.0"
+  cc1101-idf:
+    path: /home/devcexx/projects/cc1101/cc1101-idf/components/cc1101-idf
   # # Put list of dependencies here
   # # For components maintained by Espressif:
   # component: "~1.0.0"

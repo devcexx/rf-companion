@@ -8,6 +8,10 @@
 #include <unistd.h>
 #include "driver/gpio.h"
 
+#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#include "cc1101.h"
+#endif
+
 #define CLEMSA_CODEGEN_DEFAULT_CODE_SIZE 36
 
 /* Number of base clock cycles to generate before starting sending the
@@ -22,6 +26,10 @@
    the code and the beginning of a repetition */
 #define CLEMSA_CODEGEN_CYCLES_BETWEEN_REPETITIONS 5
 
+
+// When using the CC1101, the CC1101 synchronous mode is used, and the
+// CC1101 clock is used instead of the ESP32 timers.
+#ifndef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
 /* The resolution of the base clock. Base clock will take 1 / (this
    value) seconds to count one. */
 #define CLEMSA_CODEGEN_BASE_CLK_RESOLUTION 1000000
@@ -47,20 +55,26 @@
 #if (CLEMSA_CODEGEN_CLK_LOW_COUNT >= CLEMSA_CODEGEN_CLK_HIGH_COUNT)
 #error "CLEMSA_CODEGEN_CLK_LOW_COUNT cannot be greater or equal than CLEMSA_CODEGEN_CLK_HIGH_COUNT"
 #endif
+#endif // CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
 
 struct clemsa_codegen_tx;
 
 typedef void(*clemsa_codegen_done_callback)(struct clemsa_codegen_tx* tx);
 struct clemsa_codegen {
-  gpio_num_t gpio;
   bool busy;
   clemsa_codegen_done_callback done_callback;
+
+  #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  cc1101_device_t* cc1101_device;
+  #else
+  gpio_num_t gpio;
 
   /* (Internal) Base clock that drives the code generation */
   gptimer_handle_t _base_clk;
 
   /* (Internal) 16 kHz clock that generates the ASK pulse */
   gptimer_handle_t _ask_clk;
+  #endif
 
 };
 
@@ -98,10 +112,6 @@ struct clemsa_codegen_tx {
      oscillate the transmission until it autostops */
   volatile int _remaining_ask_ticks;
 
-  /* Stores if the ASK clock is running, just for preventing annoying
-     invalid state errors from ESP */
-  volatile bool _ask_running;
-
   /* (Internal) Indicates when will the next code repetition start to be transmitted. */
   uint32_t _next_code_repetition_start_cycle;
 
@@ -109,9 +119,19 @@ struct clemsa_codegen_tx {
   uint32_t _times_code_sent;
 
   volatile bool _terminated;
+
+  #ifndef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  /* Stores if the ASK clock is running, just for preventing annoying
+     invalid state errors from ESP */
+  volatile bool _ask_running;
+  #endif
 };
 
+#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, cc1101_device_t* device);
+#else
 esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, gpio_num_t gpio);
+#endif
 //esp_err_t clemsa_codegen_deinit(struct clemsa_codegen *ptr, gpio_num_t gpio);
 esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen *instance,
                                   struct clemsa_codegen_tx *tx);
