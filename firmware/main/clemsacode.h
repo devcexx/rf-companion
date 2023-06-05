@@ -47,15 +47,15 @@
 #define CLEMSA_CODEGEN_CLK_HIGH_COUNT 2070
 #define CLEMSA_CODEGEN_CLK_LOW_COUNT 1030
 
-/* The number of the ASK ticks that needs to be emitted for each digit
-   of the transmitting code */
-#define CLEMSA_CODEGEN_ASK_TICKS_ZERO 15
-#define CLEMSA_CODEGEN_ASK_TICKS_ONE 100
-
 #if (CLEMSA_CODEGEN_CLK_LOW_COUNT >= CLEMSA_CODEGEN_CLK_HIGH_COUNT)
 #error "CLEMSA_CODEGEN_CLK_LOW_COUNT cannot be greater or equal than CLEMSA_CODEGEN_CLK_HIGH_COUNT"
 #endif
 #endif // CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+
+/* The number of the ASK ticks that needs to be emitted for each digit
+   of the transmitting code */
+#define CLEMSA_CODEGEN_ASK_TICKS_ZERO 15
+#define CLEMSA_CODEGEN_ASK_TICKS_ONE 100
 
 struct clemsa_codegen_tx;
 
@@ -120,7 +120,9 @@ struct clemsa_codegen_tx {
 
   volatile bool _terminated;
 
-  #ifndef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  uint32_t _cc1101_ticks;
+  #else
   /* Stores if the ASK clock is running, just for preventing annoying
      invalid state errors from ESP */
   volatile bool _ask_running;

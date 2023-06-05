@@ -1,3 +1,4 @@
+#include "cc1101.h"
 #include "esp_attr.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
@@ -23,21 +24,48 @@ static uint32_t get_code_repetition_begin_cycle(uint32_t repetition, size_t code
     (code_len + CLEMSA_CODEGEN_CYCLES_BETWEEN_REPETITIONS) * repetition;
 }
 
+static inline void clemsa_codegen_write(struct clemsa_codegen_tx* tx, uint32_t level) {
+  #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  cc1101_trans_continuous_write(tx->_generator->cc1101_device, level);
+  #else
+  gpio_set_level(tx->_generator->gpio, level);
+  #endif
+}
+
+static inline void clemsa_codegen_ask_clk_enable(struct clemsa_codegen_tx* tx, bool enable) {
+#ifndef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  if (enable) {
+    gptimer_set_raw_count(tx->_generator->_ask_clk, 0);
+
+    tx->_ask_running = true;
+    gptimer_start(tx->_generator->_ask_clk);
+  } else if (tx->_ask_running) {
+    tx->_ask_running = false;
+    gptimer_stop(tx->_generator->_ask_clk);
+  }
+#endif
+}
+
 static void clemsa_codegen_cleanup_transmission(void* arg, uint32_t _ignored) {
   struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
   tx->_terminated = true;
   tx->_generator->busy = false;
 
+#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  cc1101_set_idle(tx->_generator->cc1101_device);
+#else
   gptimer_stop(tx->_generator->_base_clk);
 
+  clemsa_codegen_ask_clk_enable(tx, false);
   if (tx->_ask_running) {
     gptimer_stop(tx->_generator->_ask_clk);
   }
 
-
   gptimer_disable(tx->_generator->_base_clk);
   gptimer_disable(tx->_generator->_ask_clk);
-  gpio_set_level(tx->_generator->gpio, 0);
+#endif
+
+  clemsa_codegen_write(tx, 0);
   ESP_LOGI(TAG, "Transmission of code %s finished", tx->code_name);
 
   if (tx != NULL) {
@@ -46,18 +74,15 @@ static void clemsa_codegen_cleanup_transmission(void* arg, uint32_t _ignored) {
 }
 
 static IRAM_ATTR void clemsa_codegen_base_clk_fall(struct clemsa_codegen_tx* tx) {
-  if (tx->_ask_running) {
-    tx->_ask_running = false;
-    gptimer_stop(tx->_generator->_ask_clk);
-  }
-  gpio_set_level(tx->_generator->gpio, 0);
+  clemsa_codegen_ask_clk_enable(tx, false);
+  clemsa_codegen_write(tx, 0);
   tx->_base_clk_cycles++;
 }
 
 static IRAM_ATTR void clemsa_codegen_base_clk_raise(struct clemsa_codegen_tx* tx) {
   if (tx->_base_clk_cycles < CLEMSA_CODEGEN_SYNC_CLOCK_CYCLES) {
     // Stage 1: Sending synchronization signal
-    gpio_set_level(tx->_generator->gpio, 1);
+    clemsa_codegen_write(tx, 1);
   } else if (tx->_base_clk_cycles >= tx->_next_code_repetition_start_cycle) {
     // Stage 2: Sending the code. The code will be sent probably
     // multiple times, starting at a specific clock cycle, defined by
@@ -70,7 +95,7 @@ static IRAM_ATTR void clemsa_codegen_base_clk_raise(struct clemsa_codegen_tx* tx
       tx->_times_code_sent++;
       if (tx->_times_code_sent >= tx->repetition_count) {
 	// No more repetitions to send. Terminate.
-	gpio_set_level(tx->_generator->gpio, 0);
+	clemsa_codegen_write(tx, 0);
 	if (!tx->_terminated) {
 	  tx->_terminated = true;
 	  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -97,18 +122,53 @@ static IRAM_ATTR void clemsa_codegen_base_clk_raise(struct clemsa_codegen_tx* tx
       }
 
       tx->_ask_clk_high = false;
-      gptimer_set_raw_count(tx->_generator->_ask_clk, 0);
-
-      tx->_ask_running = true;
-      gptimer_start(tx->_generator->_ask_clk);
+      clemsa_codegen_ask_clk_enable(tx, true);
     }
   } else {
     // We're probably waiting to the next repetition to happen, so we
     // just set the port to zero and keep going.
-    gpio_set_level(tx->_generator->gpio, 0);
+    clemsa_codegen_write(tx, 0);
   }
 }
 
+static IRAM_ATTR bool clemsa_codegen_ask_clk_tick(gptimer_handle_t timer, const gptimer_alarm_event_data_t* edata, void* arg) {
+  portDISABLE_INTERRUPTS();
+  struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
+  if (tx->_base_clk_cycles <= CLEMSA_CODEGEN_SYNC_CLOCK_CYCLES) {
+    return false;
+  }
+  if (tx->_remaining_ask_ticks <= 0) {
+    clemsa_codegen_write(tx, 0);
+  } else {
+    tx->_remaining_ask_ticks--;
+    tx->_ask_clk_high = !tx->_ask_clk_high;
+    clemsa_codegen_write(tx, tx->_ask_clk_high);
+  }
+  portENABLE_INTERRUPTS();
+  return false;
+}
+
+#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+static IRAM_ATTR void clemsa_codegen_cc1101_clk_tick(const cc1101_device_t* device, void* arg) {
+  portDISABLE_INTERRUPTS();
+  struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
+  clemsa_codegen_ask_clk_tick(NULL, NULL, tx);
+
+  if (tx->_ask_clk_high) {
+    if (tx->_cc1101_ticks % 31 == 0) {
+      tx->_ask_clk_high = false;
+      clemsa_codegen_base_clk_fall(tx);
+    }
+  } else {
+    if (tx->_cc1101_ticks % 50 == 0) {
+      tx->_ask_clk_high = true;
+      clemsa_codegen_base_clk_raise(tx);
+    }
+  }
+  tx->_cc1101_ticks++;
+  portENABLE_INTERRUPTS();
+}
+#else
 static IRAM_ATTR bool clemsa_codegen_base_clk_tick(gptimer_handle_t timer, const gptimer_alarm_event_data_t* edata, void* arg) {
   portDISABLE_INTERRUPTS();
   struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
@@ -137,31 +197,18 @@ static IRAM_ATTR bool clemsa_codegen_base_clk_tick(gptimer_handle_t timer, const
   portENABLE_INTERRUPTS();
   return false;
 }
-
-static IRAM_ATTR bool clemsa_codegen_ask_clk_tick(gptimer_handle_t timer, const gptimer_alarm_event_data_t* edata, void* arg) {
-  portDISABLE_INTERRUPTS();
-  struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
-  if (tx->_remaining_ask_ticks <= 0) {
-    gpio_set_level(tx->_generator->gpio, 0);
-  } else {
-    tx->_remaining_ask_ticks--;
-    tx->_ask_clk_high = !tx->_ask_clk_high;
-    gpio_set_level(tx->_generator->gpio, tx->_ask_clk_high);
-  }
-  portENABLE_INTERRUPTS();
-  return false;
-}
+#endif
 
 #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
 esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, cc1101_device_t* device) {
 #else
 esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, gpio_num_t gpio) {
 #endif
-  int err;
 
   #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
   ptr->cc1101_device = device;
   #else
+  int err;
   ptr->gpio = gpio;
   gpio_reset_pin(gpio);
   gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
@@ -194,7 +241,6 @@ esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, gpio_num_t gpio) {
 
 esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clemsa_codegen_tx* tx) {
   esp_err_t err;
-
   generator->busy = true;
   tx->_generator = generator;
   tx->_next_digit = 0;
@@ -204,7 +250,20 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
   tx->_times_code_sent = 0;
   tx->_terminated = false;
 
-#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#if CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  tx->_cc1101_ticks = 0;
+  cc1101_sync_mode_cfg_t sync_mode_cfg = {
+    .clk_cb = clemsa_codegen_cc1101_clk_tick,
+    .user = tx
+  };
+
+  if ((err = cc1101_configure_sync_mode(generator->cc1101_device, &sync_mode_cfg)) != ESP_OK) {
+    return err;
+  }
+
+  if ((err = cc1101_enable_tx(generator->cc1101_device, CC1101_TRANS_MODE_SYNCHRONOUS)) != ESP_OK) {
+    return err;
+  }
 #else
   tx->_ask_running = false;
   gptimer_alarm_config_t base_clk_alarm_config = {
@@ -257,9 +316,10 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
     return err;
   }
 
+#endif // CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
 
   return ESP_OK;
-#endif // CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+
 }
 
 bool clemsa_codegen_tx_finished(struct clemsa_codegen_tx *tx) {
