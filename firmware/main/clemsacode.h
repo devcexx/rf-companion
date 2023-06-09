@@ -9,6 +9,10 @@
 #include "driver/gpio.h"
 
 #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#define CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
+#endif
+
+#ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
 #include "cc1101.h"
 #endif
 
@@ -29,7 +33,7 @@
 
 // When using the CC1101, the CC1101 synchronous mode is used, and the
 // CC1101 clock is used instead of the ESP32 timers.
-#ifndef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#ifndef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
 /* The resolution of the base clock. Base clock will take 1 / (this
    value) seconds to count one. */
 #define CLEMSA_CODEGEN_BASE_CLK_RESOLUTION 1000000
@@ -50,7 +54,7 @@
 #if (CLEMSA_CODEGEN_CLK_LOW_COUNT >= CLEMSA_CODEGEN_CLK_HIGH_COUNT)
 #error "CLEMSA_CODEGEN_CLK_LOW_COUNT cannot be greater or equal than CLEMSA_CODEGEN_CLK_HIGH_COUNT"
 #endif
-#endif // CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#endif // CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
 
 /* The number of the ASK ticks that needs to be emitted for each digit
    of the transmitting code */
@@ -64,7 +68,7 @@ struct clemsa_codegen {
   bool busy;
   clemsa_codegen_done_callback done_callback;
 
-  #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  #ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
   cc1101_device_t* cc1101_device;
   #else
   gpio_num_t gpio;
@@ -120,16 +124,21 @@ struct clemsa_codegen_tx {
 
   volatile bool _terminated;
 
-  #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
   uint32_t _cc1101_ticks;
-  #else
-  /* Stores if the ASK clock is running, just for preventing annoying
-     invalid state errors from ESP */
+  uint32_t _cc1101_base_clk_next_fall;
+#endif
+
+  /*
+   * (Internal) When CC1101 support is enabled, uses to indicate the
+   * clock ISR to run the ASK routine or not. If CC1101 support is not
+   * enabled, then it is used to determine if the gptimer handling the
+   * ASK timer is running or not.
+   */
   volatile bool _ask_running;
-  #endif
 };
 
-#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
 esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, cc1101_device_t* device);
 #else
 esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, gpio_num_t gpio);

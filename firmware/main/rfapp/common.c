@@ -1,8 +1,10 @@
+#include "cc1101.h"
 #include "esp_err.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/portmacro.h"
 #include "hal/gpio_types.h"
+#include "hal/spi_types.h"
 #include "host/ble_uuid.h"
 #include "led_strip.h"
 #include "led_strip_types.h"
@@ -165,6 +167,15 @@ static void transmission_initiator_task(void* arg) {
     RF_LOGI("Transmission initiated");
   }
 }
+uint8_t registers[] = {
+    0x0b, 0x2e, 0x3f, 0x07, 0xd3, 0x91, 0xff, 0x04, 0x12, 0x00, 0x00, 0x0f,
+    0x00, 0x10, 0xb0, 0x4b, 0x89, 0x42, 0x30, 0x22, 0xf8, 0x47, 0x07, 0x30,
+    0x18, 0x14, 0x6c, 0x03, 0x40, 0x91, 0x87, 0x6b, 0xf8, 0x56, 0x11, 0xaa,
+    0x2a, 0x17, 0x0d, 0x41, 0x00, 0x59, 0x7f, 0x3f, 0x88, 0x31, 0x0b};
+
+
+uint8_t patable[8] = {0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
 
 void init_clemsa_codegen() {
   queue_tx_start_handle = xQueueCreateStatic
@@ -173,7 +184,49 @@ void init_clemsa_codegen() {
      queue_tx_start_storage,
      &queue_tx_start_holder);
 
+#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+
+#define MISO_GPIO GPIO_NUM_13
+#define MOSI_GPIO GPIO_NUM_11
+#define SCLK_GPIO GPIO_NUM_12
+#define CSN_GPIO GPIO_NUM_2
+
+  // In this mode, this pin will be used as input. The CC1101 will be
+  // generate a clock at a frequency equal to the data rate (in this
+  // case, 16 kHz).
+#define GDO2_GPIO GPIO_NUM_4
+
+  // Used for data transmission. The CC1101 will sample the signal of
+  // the GPIO on each clock raise.
+#define GDO0_GPIO GPIO_NUM_10
+
+
+  ESP_ERROR_CHECK(gpio_install_isr_service(0));
+
+
+  spi_bus_config_t spi_bus_cfg = {
+    .miso_io_num = MISO_GPIO,
+    .mosi_io_num = MOSI_GPIO,
+    .sclk_io_num = SCLK_GPIO,
+  };
+
+  cc1101_device_cfg_t cfg = {
+    .spi_host = SPI2_HOST,
+    .gdo0_io_num = GDO0_GPIO,
+    .gdo2_io_num = GDO2_GPIO,
+    .cs_io_num = CSN_GPIO,
+    .miso_io_num = MISO_GPIO
+  };
+
+  cc1101_device_t* device;
+  ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &spi_bus_cfg, SPI_DMA_CH_AUTO));
+  ESP_ERROR_CHECK(cc1101_init(&cfg, &device));
+  ESP_ERROR_CHECK(cc1101_write_burst(device, CC1101_FIRST_CFG_REG, registers, sizeof(registers)));
+  ESP_ERROR_CHECK(cc1101_write_patable(device, patable));
+  ESP_ERROR_CHECK(clemsa_codegen_init(&generator, device));
+  #else
   ESP_ERROR_CHECK(clemsa_codegen_init(&generator, RF_ANTENNA_GPIO));
+  #endif
 
   generator.done_callback = clemsa_codegen_tx_cb;
   tx.repetition_count = 10;

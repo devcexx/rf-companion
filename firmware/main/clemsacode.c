@@ -25,7 +25,7 @@ static uint32_t get_code_repetition_begin_cycle(uint32_t repetition, size_t code
 }
 
 static inline void clemsa_codegen_write(struct clemsa_codegen_tx* tx, uint32_t level) {
-  #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  #ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
   cc1101_trans_continuous_write(tx->_generator->cc1101_device, level);
   #else
   gpio_set_level(tx->_generator->gpio, level);
@@ -33,17 +33,22 @@ static inline void clemsa_codegen_write(struct clemsa_codegen_tx* tx, uint32_t l
 }
 
 static inline void clemsa_codegen_ask_clk_enable(struct clemsa_codegen_tx* tx, bool enable) {
-#ifndef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
+  tx->_ask_running = enable;
+#else
   if (enable) {
-    gptimer_set_raw_count(tx->_generator->_ask_clk, 0);
-
-    tx->_ask_running = true;
-    gptimer_start(tx->_generator->_ask_clk);
+    if (!tx->_ask_running) {
+      tx->_ask_running = true;
+      gptimer_set_raw_count(tx->_generator->_ask_clk, 0);
+      gptimer_start(tx->_generator->_ask_clk);
+    }
   } else if (tx->_ask_running) {
-    tx->_ask_running = false;
     gptimer_stop(tx->_generator->_ask_clk);
+    tx->_ask_running = false;
   }
+
 #endif
+
 }
 
 static void clemsa_codegen_cleanup_transmission(void* arg, uint32_t _ignored) {
@@ -51,16 +56,12 @@ static void clemsa_codegen_cleanup_transmission(void* arg, uint32_t _ignored) {
   tx->_terminated = true;
   tx->_generator->busy = false;
 
-#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
   cc1101_set_idle(tx->_generator->cc1101_device);
 #else
   gptimer_stop(tx->_generator->_base_clk);
 
   clemsa_codegen_ask_clk_enable(tx, false);
-  if (tx->_ask_running) {
-    gptimer_stop(tx->_generator->_ask_clk);
-  }
-
   gptimer_disable(tx->_generator->_base_clk);
   gptimer_disable(tx->_generator->_ask_clk);
 #endif
@@ -68,7 +69,7 @@ static void clemsa_codegen_cleanup_transmission(void* arg, uint32_t _ignored) {
   clemsa_codegen_write(tx, 0);
   ESP_LOGI(TAG, "Transmission of code %s finished", tx->code_name);
 
-  if (tx != NULL) {
+  if (tx->_generator != NULL) {
     tx->_generator->done_callback(tx);
   }
 }
@@ -131,12 +132,7 @@ static IRAM_ATTR void clemsa_codegen_base_clk_raise(struct clemsa_codegen_tx* tx
   }
 }
 
-static IRAM_ATTR bool clemsa_codegen_ask_clk_tick(gptimer_handle_t timer, const gptimer_alarm_event_data_t* edata, void* arg) {
-  portDISABLE_INTERRUPTS();
-  struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
-  if (tx->_base_clk_cycles <= CLEMSA_CODEGEN_SYNC_CLOCK_CYCLES) {
-    return false;
-  }
+static IRAM_ATTR void clemsa_codegen_ask_clk_tick(struct clemsa_codegen_tx* tx) {
   if (tx->_remaining_ask_ticks <= 0) {
     clemsa_codegen_write(tx, 0);
   } else {
@@ -144,24 +140,25 @@ static IRAM_ATTR bool clemsa_codegen_ask_clk_tick(gptimer_handle_t timer, const 
     tx->_ask_clk_high = !tx->_ask_clk_high;
     clemsa_codegen_write(tx, tx->_ask_clk_high);
   }
-  portENABLE_INTERRUPTS();
-  return false;
 }
 
-#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
-static IRAM_ATTR void clemsa_codegen_cc1101_clk_tick(const cc1101_device_t* device, void* arg) {
+#ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
+static IRAM_ATTR void clemsa_codegen_cc1101_clk_isr(const cc1101_device_t* device, void* arg) {
   portDISABLE_INTERRUPTS();
   struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
-  clemsa_codegen_ask_clk_tick(NULL, NULL, tx);
+  if (tx->_ask_running) {
+    clemsa_codegen_ask_clk_tick(tx);
+  }
 
   if (tx->_ask_clk_high) {
-    if (tx->_cc1101_ticks % 31 == 0) {
+    if (tx->_cc1101_ticks == tx->_cc1101_base_clk_next_fall) {
       tx->_ask_clk_high = false;
       clemsa_codegen_base_clk_fall(tx);
     }
   } else {
     if (tx->_cc1101_ticks % 50 == 0) {
       tx->_ask_clk_high = true;
+      tx->_cc1101_base_clk_next_fall = tx->_cc1101_ticks + 31;
       clemsa_codegen_base_clk_raise(tx);
     }
   }
@@ -169,7 +166,7 @@ static IRAM_ATTR void clemsa_codegen_cc1101_clk_tick(const cc1101_device_t* devi
   portENABLE_INTERRUPTS();
 }
 #else
-static IRAM_ATTR bool clemsa_codegen_base_clk_tick(gptimer_handle_t timer, const gptimer_alarm_event_data_t* edata, void* arg) {
+static IRAM_ATTR bool clemsa_codegen_base_clk_isr(gptimer_handle_t timer, const gptimer_alarm_event_data_t* edata, void* arg) {
   portDISABLE_INTERRUPTS();
   struct clemsa_codegen_tx* tx = (struct clemsa_codegen_tx*) arg;
 
@@ -197,15 +194,22 @@ static IRAM_ATTR bool clemsa_codegen_base_clk_tick(gptimer_handle_t timer, const
   portENABLE_INTERRUPTS();
   return false;
 }
+static IRAM_ATTR bool clemsa_codegen_ask_clk_isr(gptimer_handle_t timer, const gptimer_alarm_event_data_t* edata, void* arg) {
+  portDISABLE_INTERRUPTS();
+  clemsa_codegen_ask_clk_tick((struct clemsa_codegen_tx*) arg);
+  portENABLE_INTERRUPTS();
+  return false;
+}
+
 #endif
 
-#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
 esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, cc1101_device_t* device) {
 #else
 esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, gpio_num_t gpio) {
 #endif
 
-  #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+  #ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
   ptr->cc1101_device = device;
   #else
   int err;
@@ -249,11 +253,12 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
   tx->_next_code_repetition_start_cycle = get_code_repetition_begin_cycle(0, tx->code_len);
   tx->_times_code_sent = 0;
   tx->_terminated = false;
+  tx->_ask_running = false;
 
-#if CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
   tx->_cc1101_ticks = 0;
   cc1101_sync_mode_cfg_t sync_mode_cfg = {
-    .clk_cb = clemsa_codegen_cc1101_clk_tick,
+    .clk_cb = clemsa_codegen_cc1101_clk_isr,
     .user = tx
   };
 
@@ -265,14 +270,13 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
     return err;
   }
 #else
-  tx->_ask_running = false;
   gptimer_alarm_config_t base_clk_alarm_config = {
     .alarm_count = CLEMSA_CODEGEN_CLK_HIGH_COUNT,
     .flags.auto_reload_on_alarm = false,
   };
 
   gptimer_event_callbacks_t base_clk_callback = {
-    .on_alarm = clemsa_codegen_base_clk_tick
+    .on_alarm = clemsa_codegen_base_clk_isr
   };
 
   gptimer_alarm_config_t ask_clk_alarm_config = {
@@ -281,7 +285,7 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
   };
 
   gptimer_event_callbacks_t ask_clk_callback = {
-    .on_alarm = clemsa_codegen_ask_clk_tick
+    .on_alarm = clemsa_codegen_ask_clk_isr
   };
 
   // Init Base Clock
@@ -316,7 +320,7 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
     return err;
   }
 
-#endif // CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#endif // CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
 
   return ESP_OK;
 
