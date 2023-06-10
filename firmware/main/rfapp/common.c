@@ -215,7 +215,8 @@ void init_clemsa_codegen() {
     .gdo0_io_num = GDO0_GPIO,
     .gdo2_io_num = GDO2_GPIO,
     .cs_io_num = CSN_GPIO,
-    .miso_io_num = MISO_GPIO
+    .miso_io_num = MISO_GPIO,
+    .crystal_freq = CC1101_CRYSTAL_26MHZ
   };
 
   cc1101_device_t* device;

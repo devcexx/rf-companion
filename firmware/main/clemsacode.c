@@ -18,13 +18,13 @@
 #define TAG "clemsa_code"
 
 // repetition is base 0!
-static uint32_t get_code_repetition_begin_cycle(uint32_t repetition, size_t code_len) {
+static IRAM_ATTR uint32_t get_code_repetition_begin_cycle(uint32_t repetition, size_t code_len) {
   return CLEMSA_CODEGEN_SYNC_CLOCK_CYCLES +
     CLEMSA_CODEGEN_WAIT_CLOCK_CYCLES +
     (code_len + CLEMSA_CODEGEN_CYCLES_BETWEEN_REPETITIONS) * repetition;
 }
 
-static inline void clemsa_codegen_write(struct clemsa_codegen_tx* tx, uint32_t level) {
+static inline IRAM_ATTR void clemsa_codegen_write(struct clemsa_codegen_tx* tx, uint32_t level) {
   #ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
   cc1101_trans_continuous_write(tx->_generator->cc1101_device, level);
   #else
@@ -32,7 +32,7 @@ static inline void clemsa_codegen_write(struct clemsa_codegen_tx* tx, uint32_t l
   #endif
 }
 
-static inline void clemsa_codegen_ask_clk_enable(struct clemsa_codegen_tx* tx, bool enable) {
+static inline IRAM_ATTR void clemsa_codegen_ask_clk_enable(struct clemsa_codegen_tx* tx, bool enable) {
 #ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
   tx->_ask_running = enable;
 #else
@@ -262,6 +262,12 @@ esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen* generator, struct clems
     .user = tx
   };
 
+  // A frequency of 16000 will lead to a real frequency of 16017
+  // because of rounding. Preferring using a frequency slightly slower
+  // so that final pulses are a little bit slower than 16 kHz.
+  if ((err = cc1101_set_data_rate(generator->cc1101_device, 15968)) != ESP_OK) {
+    return err;
+  }
   if ((err = cc1101_configure_sync_mode(generator->cc1101_device, &sync_mode_cfg)) != ESP_OK) {
     return err;
   }
