@@ -17,6 +17,7 @@
 #include "../private.h"
 #include "../bt/rfble_gatt.h"
 #include "../teslacharger.h"
+#include "../fixedcode.h"
 
 struct rgb COLOR_RED = {.r = 255, .g = 0, .b = 0};
 struct rgb COLOR_BLUE = {.r = 0, .g = 0, .b = 255};
@@ -28,6 +29,9 @@ static bool antenna_busy = false;
 
 static struct clemsa_codegen generator = {0};
 static struct clemsa_codegen_tx tx = {0};
+
+static rf_fixedcode_port_t port = {0};
+static rf_fixedcode_tx_t fixedcode_tesla_tx = {0};
 
 bool pairing_mode;
 bool ready_to_reboot = false;
@@ -159,7 +163,9 @@ static void transmission_initiator_task(void* arg) {
       // and the state of the request is set to PROCESSING. We need to
       // run the tx, free the antenna and send the RF task completion
       // notification.
-      tesla_charger_open_door_sync(RF_ANTENNA_GPIO);
+      //      tesla_charger_open_door_sync(RF_ANTENNA_GPIO);
+
+      ESP_ERROR_CHECK(fixedcode_init_tx(&port, &fixedcode_tesla_tx));
       rfble_gatt_notify_send_rf_response(RFBLE_GATT_SEND_RF_COMPLETED);
       rf_antenna_set_busy(false);
     }
@@ -225,6 +231,14 @@ void init_clemsa_codegen() {
   ESP_ERROR_CHECK(cc1101_write_burst(device, CC1101_FIRST_CFG_REG, registers, sizeof(registers)));
   ESP_ERROR_CHECK(cc1101_write_patable(device, patable));
   ESP_ERROR_CHECK(clemsa_codegen_init(&generator, device));
+
+  port.device = device;
+  fixedcode_tesla_tx.bit_rate = 2500;
+  fixedcode_tesla_tx.code_len = 43;
+  fixedcode_tesla_tx.data = tesla_charger_door_payload;
+  fixedcode_tesla_tx.repetitions = 5;
+  fixedcode_tesla_tx.ticks_between_repetitions = 57;
+
   #else
   ESP_ERROR_CHECK(clemsa_codegen_init(&generator, RF_ANTENNA_GPIO));
   #endif
@@ -232,6 +246,8 @@ void init_clemsa_codegen() {
   generator.done_callback = clemsa_codegen_tx_cb;
   tx.repetition_count = 10;
   tx.code_len = CLEMSA_CODEGEN_DEFAULT_CODE_SIZE;
+
+
 
   xTaskCreatePinnedToCore
     (
