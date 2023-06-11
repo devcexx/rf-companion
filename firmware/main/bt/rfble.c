@@ -30,7 +30,6 @@
 rfble_opts_t rfble_opts;
 rfble_state_t rfble_state = {0};
 
-static uint8_t own_addr_type;
 static const char *tag = "NimBLE_BLE_PRPH";
 static int rfble_gap_event(struct ble_gap_event *event, void *arg);
 
@@ -123,7 +122,7 @@ static void rfble_advertise(void) {
     adv_params.filter_policy = BLE_HCI_ADV_FILT_BOTH;
   }
 
-  rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER,
+  rc = ble_gap_adv_start(BLE_OWN_ADDR_RPA_PUBLIC_DEFAULT, NULL, BLE_HS_FOREVER,
 			 &adv_params, rfble_gap_event, NULL);
   if (rc != 0) {
     ESP_LOGE(TAG, "Error enabling advertisement; rc=%d\n", rc);
@@ -389,14 +388,6 @@ static void rfble_on_reset(int reason) {
 }
 
 static void rfble_on_sync(void) {
-  int rc;
-  /* Figure out address to use while advertising (no privacy for now) */
-  if ((rc = ble_hs_id_infer_auto(1, &own_addr_type)) != 0) {
-    ESP_LOGE(TAG, "Error determining address type; rc=%d", rc);
-    return;
-  }
-  ESP_LOGI(TAG, "Inferred address type: %d", own_addr_type);
-
   // Set whitelist before start advertising
   rfble_sync_whitelist_with_bonded_devs();
 
