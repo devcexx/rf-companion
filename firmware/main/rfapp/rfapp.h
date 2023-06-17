@@ -29,6 +29,15 @@
 #define RF_COMPANION_DEVICE_NAME "RF Companion"
 #endif
 
+#ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
+#define CC1101_MISO_GPIO GPIO_NUM_13
+#define CC1101_MOSI_GPIO GPIO_NUM_11
+#define CC1101_SCLK_GPIO GPIO_NUM_12
+#define CC1101_CSN_GPIO GPIO_NUM_2
+#define CC1101_GDO2_GPIO GPIO_NUM_4
+#define CC1101_GDO0_GPIO GPIO_NUM_10
+#endif
+
 
 /** The NVS namespace used by the application */
 #define RF_APP_NVS_NS "rfapp"
@@ -76,19 +85,6 @@ extern bool pairing_mode;
  */
 extern bool ready_to_reboot;
 
-typedef enum {
-  STORED_SIGNAL_HOME_GARAGE_EXIT = 1,
-  STORED_SIGNAL_HOME_GARAGE_ENTER = 2,
-  STORED_SIGNAL_PARENTS_GARAGE_LEFT = 3,
-  STORED_SIGNAL_PARENTS_GARAGE_RIGHT = 4,
-  STORED_SIGNAL_TESLA_CHARGER_DOOR_OPEN = 5,
-} rf_stored_signal_t;
-
-typedef enum __attribute__((packed)) {
-  TX_TYPE_CLEMSA_CODEGEN = 1,
-  TX_TYPE_TESLA_CHARGER_OPEN = 2
-} tx_type_t;
-
 struct rgb {
   uint8_t r;
   uint8_t g;
@@ -116,15 +112,9 @@ void app_rf_main(void);
 
 void init_nvs(void);
 
-bool rf_antenna_is_busy();
-void rf_antenna_set_busy(bool value);
-
 int rf_companion_bt_read_chr_cb(struct ble_gatt_access_ctxt *ctxt, const ble_uuid_t* chr_id);
 int rf_companion_bt_write_chr_cb(struct ble_gatt_access_ctxt *ctxt,
                                  const ble_uuid_t *chr_id);
-
-void init_clemsa_codegen();
-void rf_begin_send_stored_signal(rf_stored_signal_t signal);
 
 void rf_companion_main_task();
 

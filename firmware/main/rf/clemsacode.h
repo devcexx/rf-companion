@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include "driver/gpio.h"
+#include "rf.h"
 
 #ifdef CONFIG_RFAPP_ENABLE_CC1101_SUPPORT
 #define CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
@@ -61,42 +62,20 @@
 #define CLEMSA_CODEGEN_ASK_TICKS_ZERO 15
 #define CLEMSA_CODEGEN_ASK_TICKS_ONE 100
 
+extern const rf_antenna_tx_generator_t clemsa_generator;
+
 struct clemsa_codegen_tx;
 
 typedef void(*clemsa_codegen_done_callback)(struct clemsa_codegen_tx* tx);
-struct clemsa_codegen {
-  bool busy;
-  clemsa_codegen_done_callback done_callback;
 
-  #ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
-  cc1101_device_t* cc1101_device;
-  #else
-  gpio_num_t gpio;
-
+typedef struct {
+#ifndef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
   /* (Internal) Base clock that drives the code generation */
   gptimer_handle_t _base_clk;
 
   /* (Internal) 16 kHz clock that generates the ASK pulse */
   gptimer_handle_t _ask_clk;
-  #endif
-
-};
-
-struct clemsa_codegen_tx {
-  /* An identificative name for the code */
-  const char* code_name;
-
-  /* The code that will be sent */
-  const bool* code;
-
-  /* The length of the code that will be sent */
-  size_t code_len;
-
-  /* Number of times that the code will be repeated */
-  uint32_t repetition_count;
-
-  /* The code generator */
-  struct clemsa_codegen* _generator;
+#endif
 
   /* (Internal) the next digit of the code that needs to be sent */
   volatile size_t _next_digit;
@@ -136,16 +115,21 @@ struct clemsa_codegen_tx {
    * ASK timer is running or not.
    */
   volatile bool _ask_running;
-};
+} clemsa_port_state_t;
 
-#ifdef CLEMSA_CODEGEN_ENABLE_CC1101_SUPPORT
-esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, cc1101_device_t* device);
-#else
-esp_err_t clemsa_codegen_init(struct clemsa_codegen *ptr, gpio_num_t gpio);
-#endif
-//esp_err_t clemsa_codegen_deinit(struct clemsa_codegen *ptr, gpio_num_t gpio);
-esp_err_t clemsa_codegen_begin_tx(struct clemsa_codegen *instance,
-                                  struct clemsa_codegen_tx *tx);
+typedef struct {
+  const char* tx_name;
+  const rf_antenna_tx_generator_t* _generator;
 
-bool clemsa_codegen_tx_finished(struct clemsa_codegen_tx *tx);
+    /* The code that will be sent */
+  const uint8_t* code;
+
+  /* The length of the code that will be sent */
+  size_t code_len;
+
+  /* Number of times that the code will be repeated */
+  uint32_t repetition_count;
+} clemsa_codegen_tx_t;
+
+esp_err_t clemsa_codegen_init_tx(rf_antenna_tx_t* tx);
 #endif /* CLEMSACODE_H */

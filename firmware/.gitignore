@@ -1,4 +1,5 @@
 /main/private.c
+/main/build
 /build
 *.~undo-tree~
 *.old

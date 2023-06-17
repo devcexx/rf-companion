@@ -10,7 +10,7 @@
 #include "nimble/ble.h"
 #include "nimble/hci_common.h"
 #include "nvs_flash.h"
-/* BLE */
+
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
@@ -30,7 +30,6 @@
 rfble_opts_t rfble_opts;
 rfble_state_t rfble_state = {0};
 
-static const char *tag = "NimBLE_BLE_PRPH";
 static int rfble_gap_event(struct ble_gap_event *event, void *arg);
 
 void ble_store_config_init(void);
@@ -122,7 +121,7 @@ static void rfble_advertise(void) {
     adv_params.filter_policy = BLE_HCI_ADV_FILT_BOTH;
   }
 
-  rc = ble_gap_adv_start(BLE_OWN_ADDR_RPA_PUBLIC_DEFAULT, NULL, BLE_HS_FOREVER,
+  rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
 			 &adv_params, rfble_gap_event, NULL);
   if (rc != 0) {
     ESP_LOGE(TAG, "Error enabling advertisement; rc=%d\n", rc);
@@ -204,7 +203,7 @@ static void rfble_gap_handle_passkey_action(uint16_t conn_handle, struct ble_gap
     pkey.passkey = esp_random() % 100000;
     rfble_opts.pair_req_display_key_cb(conn_handle, pkey.passkey);
     rc = ble_sm_inject_io(conn_handle, &pkey);
-    ESP_LOGI(tag, "ble_sm_inject_io result: %d\n", rc);
+    ESP_LOGI(TAG, "ble_sm_inject_io result: %d\n", rc);
   } else if (params->action == BLE_SM_IOACT_NUMCMP) {
     if (rfble_opts.pair_req_numcmp_cb == NULL) {
       ESP_LOGE(TAG, "Requested BLE_SM_IOACT_NUMCMP passkey action but callback was unset.");
@@ -215,7 +214,7 @@ static void rfble_gap_handle_passkey_action(uint16_t conn_handle, struct ble_gap
     pkey.action = params->action;
     pkey.numcmp_accept = rfble_opts.pair_req_numcmp_cb(conn_handle, params->numcmp);
     rc = ble_sm_inject_io(conn_handle, &pkey);
-    ESP_LOGI(tag, "ble_sm_inject_io result: %d\n", rc);
+    ESP_LOGI(TAG, "ble_sm_inject_io result: %d\n", rc);
   } else if (params->action == BLE_SM_IOACT_INPUT) {
     if (rfble_opts.pair_req_type_key_cb == NULL) {
       ESP_LOGE(TAG, "Requested BLE_SM_IOACT_INPUT passkey action but callback was unset.");
@@ -226,7 +225,7 @@ static void rfble_gap_handle_passkey_action(uint16_t conn_handle, struct ble_gap
     pkey.action = params->action;
     pkey.passkey = rfble_opts.pair_req_type_key_cb(conn_handle);
     rc = ble_sm_inject_io(conn_handle, &pkey);
-    ESP_LOGI(tag, "ble_sm_inject_io result: %d\n", rc);
+    ESP_LOGI(TAG, "ble_sm_inject_io result: %d\n", rc);
   } else {
     ESP_LOGW(TAG, "Device attempted to pair with an unsupported mechanism (%d). Disconnecting.", params->action);
     ble_gap_terminate(conn_handle, BLE_ERR_REM_USER_CONN_TERM);
@@ -255,6 +254,7 @@ static void rfble_gap_handle_conn_update(uint16_t conn_handle) {
 
 static void rfble_gap_handle_adv_complete(int reason) {
   ESP_LOGI(TAG, "Advertise completed; reason=%d", reason);
+  rfble_advertise();
 }
 
 static void rfble_gap_handle_enc_change(uint16_t conn_handle, int status) {
@@ -328,7 +328,6 @@ static int rfble_gap_event(struct ble_gap_event *event, void *arg) {
 
   case BLE_GAP_EVENT_ADV_COMPLETE:
     rfble_gap_handle_adv_complete(event->adv_complete.reason);
-    rfble_advertise();
     return 0;
 
   case BLE_GAP_EVENT_ENC_CHANGE:
