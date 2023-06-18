@@ -15,6 +15,7 @@
 #include "rf_priv.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <unistd.h>
 
 #define TAG "fixedcode"
@@ -94,6 +95,7 @@ static esp_err_t fixedcode_begin_tx(rf_antenna_port_t* port, rf_antenna_tx_t* rf
     .clk_cb = fixedcode_cc1101_isr,
     .user = port
   };
+  memset(port->state, 0, sizeof(fixedcode_port_state_t));
 
   if ((err = cc1101_set_data_rate(port->cc1101, tx->bit_rate)) != ESP_OK) {
     return err;
