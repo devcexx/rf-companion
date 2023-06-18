@@ -11,4 +11,8 @@
     <string name="app_connection_failed">Error al conectar con el dispositivo</string>
     <string name="app_connection_success">Dispositivo conectado!</string>
     <string name="car_select_profile_title">Cambiar perfil</string>
+    <string name="menu_item_settings">Configurar Bluetooth</string>
+    <string name="activity_bluetooth_settings_title">Elige un dispositivo bluetooth</string>
+    <string name="activity_bluetooth_settings_bond_error">Error al emparejar el dispositivo</string>
+    <string name="car_bluetooth_not_configured">Dispositivo bluetooth no configurado. Utilice su móvil para configurarlo</string>
 </resources>

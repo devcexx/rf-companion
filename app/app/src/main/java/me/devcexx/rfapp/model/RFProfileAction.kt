@@ -1,9 +1,9 @@
 package me.devcexx.rfapp.model
 
 import androidx.car.app.model.CarColor
-import me.devcexx.rfapp.adapter.ESP32Adapter
+import me.devcexx.rfapp.adapter.RFCompanionAdapter
 
 data class RFProfileAction(val text: String,
-                           val rfAction: suspend (ESP32Adapter.ConnectedESP32Adapter) -> ESP32Adapter.CommandExecutionResult,
+                           val rfAction: suspend (RFCompanionAdapter) -> Unit,
                            val actionColor: Long,
                            val carColor: CarColor)

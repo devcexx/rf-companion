@@ -9,4 +9,8 @@
     <string name="app_connection_failed">Unable to connect to the device</string>
     <string name="app_connection_success">Device connected!</string>
     <string name="car_select_profile_title">Select profile</string>
+    <string name="menu_item_settings">Configure Bluetooth</string>
+    <string name="activity_bluetooth_settings_title">Choose a bluetooth device</string>
+    <string name="activity_bluetooth_settings_bond_error">Failed to bond with device</string>
+    <string name="car_bluetooth_not_configured">Bluetooth device not configured. Please configure it before from your phone</string>
 </resources>

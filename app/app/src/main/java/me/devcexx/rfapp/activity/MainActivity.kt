@@ -1,12 +1,14 @@
-package me.devcexx.rfapp
+package me.devcexx.rfapp.activity
 
 import android.Manifest
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.Menu
+import android.view.MenuItem
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
@@ -46,20 +48,19 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import me.devcexx.rfapp.util.PermissionRequester
+import me.devcexx.rfapp.R
 import me.devcexx.rfapp.RFCompanionApplication.Companion.rfApplication
-import me.devcexx.rfapp.adapter.ESP32Adapter
+import me.devcexx.rfapp.adapter.BluetoothException
+import me.devcexx.rfapp.adapter.RFCompanionAdapter
 import me.devcexx.rfapp.model.RFProfileAction
 import me.devcexx.rfapp.ui.theme.GarageDoorTheme
-import kotlin.coroutines.Continuation
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 class MainActivity : ComponentActivity() {
     companion object {
         private const val TAG: String = "MainActivity"
     }
 
-    private var requestPermissionContinuation: Continuation<Boolean>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +87,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main_activity_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.main_activity_menu_item_settings) {
+            openBluetoothOptionsActivity()
+            return true
+        }
+        return false
     }
 
     @Composable
@@ -181,61 +195,46 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-
-
     }
 
-    private val activityResultLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        requestPermissionContinuation?.resume(granted)
-    }
-
-    fun onHomeGarageEnterButton(updateSpinnerVisibility: (Boolean) -> Unit) {
-        runProfileAction(updateSpinnerVisibility, ESP32Adapter.ConnectedESP32Adapter::sendHomeGarageEnterRequest)
-    }
-
-    fun onHomeGarageExitButton(updateSpinnerVisibility: (Boolean) -> Unit) {
-        runProfileAction(updateSpinnerVisibility, ESP32Adapter.ConnectedESP32Adapter::sendHomeGarageExitRequest)
-    }
-
-    suspend fun requestPermissionDeferred(permission: String) = suspendCoroutine { cont ->
-        requestPermissionContinuation = cont
-        activityResultLauncher.launch(permission)
-    }
+    private val permissionRequester = PermissionRequester(this)
 
     suspend fun runDeferredBluetoothInteractiveRequest(
         updateSpinnerVisibility: (Boolean) -> Unit,
-        commandFn: suspend (ESP32Adapter.ConnectedESP32Adapter) -> ESP32Adapter.CommandExecutionResult
+        commandFn: suspend (RFCompanionAdapter) -> Unit
     ) {
         updateSpinnerVisibility(true)
 
         try {
             Log.i(TAG, "Begin requesting permissions...")
-            if (!requestPermissionDeferred(Manifest.permission.BLUETOOTH_CONNECT)) {
+            if (!permissionRequester.requestPermission(Manifest.permission.BLUETOOTH_CONNECT)) {
                 Log.w(TAG, "Permission denied! Aborted")
                 Toast.makeText(this, R.string.rf_permission_denied, Toast.LENGTH_SHORT).show()
                 return
             }
             Log.i(TAG, "Begin connecting...")
-            rfApplication.esp32Adapter.connectAndRun {
-                Log.i(TAG, "Connection success. Sending command...")
-                when(commandFn(it)) {
-                    ESP32Adapter.CommandExecutionResult.OK -> Toast.makeText(this, R.string.rf_operation_success, Toast.LENGTH_SHORT).show()
-                    ESP32Adapter.CommandExecutionResult.BUSY -> Toast.makeText(this, R.string.rf_operation_busy, Toast.LENGTH_SHORT).show()
-                    ESP32Adapter.CommandExecutionResult.INVALID_COMMAND -> Toast.makeText(this, R.string.rf_operation_invalid_command, Toast.LENGTH_SHORT).show()
-                }
-            }
-        } catch (ex: Exception) {
-            Log.e(TAG, "Error communicating with the device", ex)
+            commandFn(rfApplication.rfCompanionAdapter)
+        } catch (ex: BluetoothException) {
+            Log.e(TAG, "Bluetooth error", ex)
             Toast.makeText(this, getString(R.string.rf_operation_error, ex.message), Toast.LENGTH_SHORT).show()
         } finally {
             updateSpinnerVisibility(false)
         }
     }
 
+    fun openBluetoothOptionsActivity() {
+        startActivity(Intent(this, BluetoothOptionsActivity::class.java))
+    }
+
     fun runProfileAction(
         updateSpinnerVisibility: (Boolean) -> Unit,
-        commandFn: suspend (ESP32Adapter.ConnectedESP32Adapter) -> ESP32Adapter.CommandExecutionResult
+        commandFn: suspend (RFCompanionAdapter) -> Unit
     ) {
+        if (rfApplication.rfCompanionPreferences.bluetoothDeviceAddress == null) {
+            openBluetoothOptionsActivity()
+            return
+        }
+
         CoroutineScope(Dispatchers.Main).launch {
             runDeferredBluetoothInteractiveRequest(updateSpinnerVisibility, commandFn)
         }

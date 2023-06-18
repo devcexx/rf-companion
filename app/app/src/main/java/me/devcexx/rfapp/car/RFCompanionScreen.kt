@@ -18,9 +18,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import me.devcexx.rfapp.R
 import me.devcexx.rfapp.RFCompanionApplication.Companion.rfApplication
-import me.devcexx.rfapp.adapter.ESP32Adapter
+import me.devcexx.rfapp.adapter.BluetoothException
+import me.devcexx.rfapp.adapter.RFCompanionAdapter
 import me.devcexx.rfapp.model.RFProfile
 import me.devcexx.rfapp.model.RFProfileAction
+import java.lang.Exception
 
 class RFCompanionScreen(carContext: CarContext) : Screen(carContext) {
     companion object {
@@ -97,18 +99,12 @@ class RFCompanionScreen(carContext: CarContext) : Screen(carContext) {
         invalidate()
 
         try {
-            Log.i(TAG, "Begin requesting permissions...")
-            Log.i(TAG, "Begin connecting...")
-            rfApplication.esp32Adapter.connectAndRun {
-                Log.i(TAG, "Connection success. Sending command...")
-                when(action.action.rfAction(it)) {
-                    ESP32Adapter.CommandExecutionResult.OK -> CarToast.makeText(carContext, R.string.rf_operation_success, CarToast.LENGTH_SHORT).show()
-                    ESP32Adapter.CommandExecutionResult.BUSY -> CarToast.makeText(carContext, R.string.rf_operation_busy, CarToast.LENGTH_SHORT).show()
-                    ESP32Adapter.CommandExecutionResult.INVALID_COMMAND -> CarToast.makeText(carContext, R.string.rf_operation_invalid_command, CarToast.LENGTH_SHORT).show()
-                }
-            }
+            action.action.rfAction(rfApplication.rfCompanionAdapter)
+        } catch (ex: BluetoothException) {
+            Log.e(TAG, "Bluetooth error", ex)
+            CarToast.makeText(carContext, carContext.getString(R.string.rf_operation_error, ex.message), CarToast.LENGTH_SHORT).show()
         } catch (ex: Exception) {
-            Log.e(TAG, "Error communicating with the device", ex)
+            Log.e(TAG, "General error", ex)
             CarToast.makeText(carContext, carContext.getString(R.string.rf_operation_error, ex.message), CarToast.LENGTH_SHORT).show()
         } finally {
             action.loading = false
@@ -117,6 +113,11 @@ class RFCompanionScreen(carContext: CarContext) : Screen(carContext) {
     }
 
     private fun runProfileAction(action: ProfileActionElement) {
+        if (rfApplication.rfCompanionPreferences.bluetoothDeviceAddress == null) {
+            CarToast.makeText(carContext, carContext.getString(R.string.car_bluetooth_not_configured), CarToast.LENGTH_SHORT).show()
+            return
+        }
+
         CoroutineScope(Dispatchers.Main).launch {
             runDeferredBluetoothInteractiveRequest(action)
         }
