@@ -1,4 +1,4 @@
 #include "rf/rf.h"
 
-#define STORED_CODES_COUNT 5
+#define STORED_CODES_COUNT 7
 const extern rf_antenna_tx_t* stored_codes[STORED_CODES_COUNT];

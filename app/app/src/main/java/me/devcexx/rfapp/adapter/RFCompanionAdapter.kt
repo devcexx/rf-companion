@@ -10,7 +10,6 @@ import android.bluetooth.BluetoothStatusCodes
 import android.os.Handler
 import android.util.Log
 import kotlinx.coroutines.CancellableContinuation
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -85,11 +84,13 @@ class RFCompanionAdapter(
     }
 
     enum class SendRfStoredCode(val code: Byte) {
-        HOME_GARAGE_EXIT(1),
-        HOME_GARAGE_ENTER(2),
+        HOME_1_GARAGE_EXIT(1),
+        HOME_1_GARAGE_ENTER(2),
         PARENTS_GARAGE_A(3),
         PARENTS_GARAGE_B(4),
-        TESLA_CHARGER_OPENER(5)
+        TESLA_CHARGER_OPENER(5),
+        HOME_2_GARAGE_EXIT(6),
+        HOME_2_GARAGE_ENTER(7),
     }
 
     var state: State = State.Disconnected

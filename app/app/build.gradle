@@ -11,8 +11,8 @@ android {
         applicationId "me.devcexx.rfapp"
         minSdk 33
         targetSdk 33
-        versionCode 3
-        versionName "1.02"
+        versionCode 5
+        versionName "1.04"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
