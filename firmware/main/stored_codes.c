@@ -7,11 +7,13 @@
 #define CLEMSA_DEFAULT_REPETITION_COUNT 10
 #define TESLA_CODE_REPETITION_COUNT 10
 
-#define TESLA_CHARGER_BIT_RATE_SECOND 2500
+#define TESLA_CHARGER_BIT_RATE_SECOND 2479
 #define TESLA_CHARGER_SIGNAL_PERIOD_US (1000000 / TESLA_CHARGER_BIT_RATE_SECOND)
 #define TESLA_CHARGER_DISTANCE_BETWEEN_REPETITIONS_US 23000
 #define TESLA_CHARGER_NUM_REPETITIONS 5
 
+// FIXME: This code used to work with old STX882 transmitter, but it doesn't work with CC1101
+// Ref: https://github.com/rgerganov/tesla-opener
 static const uint8_t tesla_charger_door_payload[43] = {
     0x02, 0xAA, 0xAA, 0xAA, // Preamble of 26 bits by repeating 1010
     0x2B,                   // Sync byte
@@ -51,7 +53,7 @@ static const clemsa_codegen_tx_t clemsa_code_parents_b = {
 static const fixedcode_tx_t tesla_charger_opener = {
     ._generator = &fixedcode_generator,
     .tx_name = "Tesla Charger door opener code",
-    .bit_rate = 2500,
+    .bit_rate = 2479,
     .data = tesla_charger_door_payload,
     .ticks_between_repetitions = 57,
     .code_len = 43,
